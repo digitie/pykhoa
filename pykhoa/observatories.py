@@ -18,7 +18,16 @@ from os import PathLike
 from typing import Any, Final, Protocol, cast
 
 import requests
-from pykrtour import PlaceCoordinate
+from pykrtour import (
+    Address,
+    AddressRegion,
+    JibunAddress,
+    LegalDongCode,
+    PlaceCoordinate,
+    RoadNameAddress,
+    RoadNameAddressCode,
+    RoadNameCode,
+)
 
 from .exceptions import KhoaParseError, KhoaRequestError, KhoaServerError
 from .models import Observatory
@@ -691,11 +700,67 @@ def _lookup_vworld_address_fields(
 
     if merged and first_match is not None:
         coordinate, distance_m, match_type = first_match
-        merged["address_coordinate"] = coordinate
-        merged["address_distance_m"] = round(distance_m, 3)
-        merged["address_match_type"] = match_type
-        merged["address_source"] = "vworld"
-        return merged
+        legal_dong_code = cast(str | None, merged.get("legal_dong_code"))
+        road_address_code = cast(str | None, merged.get("road_address_code"))
+        road_name_code = cast(str | None, merged.get("road_name_code"))
+        parcel_address = cast(str | None, merged.get("parcel_address"))
+        road_address = cast(str | None, merged.get("road_address"))
+        detail_address = cast(str | None, merged.get("detail_address"))
+        zipcode = cast(str | None, merged.get("zipcode"))
+        legal_dong = (
+            LegalDongCode(code=legal_dong_code) if legal_dong_code is not None else None
+        )
+        road_address_management_code = (
+            RoadNameAddressCode(code=road_address_code)
+            if road_address_code is not None
+            else None
+        )
+        road_name_management_code = (
+            RoadNameCode(code=road_name_code) if road_name_code is not None else None
+        )
+        region = (
+            AddressRegion.from_legal_dong_code(legal_dong)
+            if legal_dong is not None
+            else None
+        )
+        jibun = (
+            JibunAddress(
+                address=parcel_address,
+                legal_dong_code=legal_dong,
+                postal_code=zipcode,
+            )
+            if legal_dong is not None or parcel_address is not None
+            else None
+        )
+        road_name = (
+            RoadNameAddress(
+                address=road_address,
+                road_name_code=road_name_management_code,
+                road_name_address_code=road_address_management_code,
+                building_name=detail_address,
+                postal_code=zipcode,
+            )
+            if (
+                road_address_code is not None
+                or road_name_code is not None
+                or road_address is not None
+            )
+            else None
+        )
+        address = Address(
+            region=region,
+            jibun=jibun,
+            road_name=road_name,
+            postal_code=zipcode,
+            detail_address=detail_address,
+        )
+        return {
+            "address": address,
+            "address_coordinate": coordinate,
+            "address_distance_m": round(distance_m, 3),
+            "address_match_type": match_type,
+            "address_source": "vworld",
+        }
 
     return {"address_match_type": "not_found", "address_source": "vworld"}
 

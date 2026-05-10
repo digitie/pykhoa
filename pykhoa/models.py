@@ -7,7 +7,16 @@ from datetime import datetime
 from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
-from pykrtour import PlaceCoordinate
+from pykrtour import (
+    Address,
+    AddressRegion,
+    JibunAddress,
+    LegalDongCode,
+    PlaceCoordinate,
+    RoadNameAddress,
+    RoadNameAddressCode,
+    RoadNameCode,
+)
 
 from ._convert import strip_or_none, to_datetime_or_none, to_float_or_none
 
@@ -42,13 +51,7 @@ class Observatory(KhoaModel):
     name: str
     coordinate: PlaceCoordinate
     data_type: str | None = None
-    legal_dong_code: str | None = None
-    road_address_code: str | None = None
-    road_name_code: str | None = None
-    parcel_address: str | None = None
-    road_address: str | None = None
-    detail_address: str | None = None
-    zipcode: str | None = None
+    address: Address | None = None
     address_coordinate: PlaceCoordinate | None = None
     address_distance_m: float | None = None
     address_match_type: str | None = None
@@ -91,6 +94,59 @@ class Observatory(KhoaModel):
 
         return self.address_coordinate.lon if self.address_coordinate is not None else None
 
+    @property
+    def legal_dong_code(self) -> str | None:
+        """주소의 법정동코드입니다."""
+
+        return self.address.legal_dong_code if self.address is not None else None
+
+    @property
+    def road_address_code(self) -> str | None:
+        """도로명주소관리번호 26자리 코드입니다."""
+
+        road_name = self.address.road_name if self.address is not None else None
+        code = road_name.road_name_address_code if road_name is not None else None
+        return code.code if code is not None else None
+
+    @property
+    def road_name_code(self) -> str | None:
+        """도로명코드 12자리 값입니다."""
+
+        road_name = self.address.road_name if self.address is not None else None
+        code = road_name.effective_road_name_code if road_name is not None else None
+        return code.code if code is not None else None
+
+    @property
+    def parcel_address(self) -> str | None:
+        """지번주소 문자열입니다."""
+
+        jibun = self.address.jibun if self.address is not None else None
+        return jibun.address if jibun is not None else None
+
+    @property
+    def road_address(self) -> str | None:
+        """도로명주소 문자열입니다."""
+
+        road_name = self.address.road_name if self.address is not None else None
+        return road_name.address if road_name is not None else None
+
+    @property
+    def detail_address(self) -> str | None:
+        """상세주소 문자열입니다."""
+
+        if self.address is None:
+            return None
+        if self.address.detail_address is not None:
+            return self.address.detail_address
+        road_name = self.address.road_name
+        return road_name.building_name if road_name is not None else None
+
+    @property
+    def zipcode(self) -> str | None:
+        """우편번호입니다."""
+
+        return self.address.effective_postal_code if self.address is not None else None
+
     @classmethod
     def from_raw(cls, row: Mapping[str, Any]) -> Observatory:
         """KHOA 포털 관측소 원문 행을 모델로 변환합니다."""
@@ -122,18 +178,78 @@ class Observatory(KhoaModel):
                 else None
             )
 
+        address: Address | None
+        address_value = row.get("address")
+        if isinstance(address_value, Address):
+            address = address_value
+        elif isinstance(address_value, Mapping):
+            address = Address.model_validate(address_value)
+        else:
+            legal_dong_code = _row_text(row, "legal_dong_code", "legalDongCode", "bjdCode")
+            road_address_code = _row_text(row, "road_address_code", "roadAddressCode")
+            road_name_code = _row_text(row, "road_name_code", "roadNameCode", "rnMgtSn")
+            parcel_address = _row_text(row, "parcel_address", "parcelAddress")
+            road_address = _row_text(row, "road_address", "roadAddress")
+            detail_address = _row_text(row, "detail_address", "detailAddress")
+            zipcode = _row_text(row, "zipcode", "zip_code", "zipCode")
+            legal_dong = (
+                LegalDongCode(code=legal_dong_code) if legal_dong_code is not None else None
+            )
+            road_address_management_code = (
+                RoadNameAddressCode(code=road_address_code)
+                if road_address_code is not None
+                else None
+            )
+            road_name_management_code = (
+                RoadNameCode(code=road_name_code) if road_name_code is not None else None
+            )
+            region = (
+                AddressRegion.from_legal_dong_code(legal_dong)
+                if legal_dong is not None
+                else None
+            )
+            jibun = (
+                JibunAddress(
+                    address=parcel_address,
+                    legal_dong_code=legal_dong,
+                    postal_code=zipcode,
+                )
+                if legal_dong is not None or parcel_address is not None
+                else None
+            )
+            road_name = (
+                RoadNameAddress(
+                    address=road_address,
+                    road_name_code=road_name_management_code,
+                    road_name_address_code=road_address_management_code,
+                    building_name=detail_address,
+                    postal_code=zipcode,
+                )
+                if (
+                    road_address_code is not None
+                    or road_name_code is not None
+                    or road_address is not None
+                )
+                else None
+            )
+            address = (
+                Address(
+                    region=region,
+                    jibun=jibun,
+                    road_name=road_name,
+                    postal_code=zipcode,
+                    detail_address=detail_address,
+                )
+                if any((region, jibun, road_name, zipcode, detail_address))
+                else None
+            )
+
         return cls(
             id=str(row["id"]),
             name=str(row["name"]),
             data_type=strip_or_none(row.get("data_type")),
             coordinate=coordinate,
-            legal_dong_code=_row_text(row, "legal_dong_code", "legalDongCode", "bjdCode"),
-            road_address_code=_row_text(row, "road_address_code", "roadAddressCode"),
-            road_name_code=_row_text(row, "road_name_code", "roadNameCode", "rnMgtSn"),
-            parcel_address=_row_text(row, "parcel_address", "parcelAddress"),
-            road_address=_row_text(row, "road_address", "roadAddress"),
-            detail_address=_row_text(row, "detail_address", "detailAddress"),
-            zipcode=_row_text(row, "zipcode", "zip_code", "zipCode"),
+            address=address,
             address_coordinate=address_coordinate,
             address_distance_m=to_float_or_none(row.get("address_distance_m")),
             address_match_type=_row_text(row, "address_match_type", "addressMatchType"),

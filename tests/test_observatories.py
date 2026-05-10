@@ -4,7 +4,7 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from pykrtour import PlaceCoordinate
+from pykrtour import Address, PlaceCoordinate
 
 from pykhoa import (
     BEACH_INFO_UPDATE_INTERVAL_MINUTES,
@@ -72,6 +72,7 @@ def test_bundled_beach_observatories_are_available():
     haeundae = next(item for item in BEACH_OBSERVATORIES if item.id == "BCH001")
     assert haeundae.name == "해운대해수욕장"
     assert haeundae.coordinate == PlaceCoordinate(lat=35.158, lon=129.159)
+    assert isinstance(haeundae.address, Address)
     assert haeundae.lat == 35.158
     assert haeundae.lon == 129.159
     assert hasattr(haeundae, "legal_dong_code")
@@ -134,7 +135,10 @@ def test_fetch_observatory_list_can_enrich_address_from_vworld_payload():
         vworld_client=vworld,
     )
 
+    assert isinstance(observatories[0].address, Address)
     assert observatories[0].legal_dong_code == "2635010500"
+    assert observatories[0].address is not None
+    assert observatories[0].address.legal_dong_code == "2635010500"
     assert observatories[0].road_address_code == "26350530419929900026400000"
     assert observatories[0].road_name_code == "263504199299"
     assert observatories[0].parcel_address == "부산광역시 해운대구 우동 622-8"
@@ -155,6 +159,7 @@ def test_get_beach_observatories_returns_bundled_address_fields():
     observatories = get_beach_observatories()
 
     haeundae = next(item for item in observatories if item.id == "BCH001")
+    assert isinstance(haeundae.address, Address)
     assert haeundae.legal_dong_code
     assert haeundae.road_address_code
     assert len(haeundae.road_address_code) == 26
