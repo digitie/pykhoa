@@ -126,3 +126,9 @@ def test_env_constructor_errors(monkeypatch):
 
     with pytest.raises(KhoaAuthError):
         KhoaClient()
+
+
+def test_constructor_accepts_api_key_parameter():
+    client = KhoaClient(api_key="TEST_KEY", retries=0)
+
+    assert client.service_key == "TEST_KEY"

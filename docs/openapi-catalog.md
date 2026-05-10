@@ -1,10 +1,10 @@
-# KHOA ODMI OpenAPI Catalog
+# KHOA ODMI OpenAPI 카탈로그
 
-Source: <https://www.khoa.go.kr/oceandata/openapi/odmi/odmiApiList.do>
+출처: <https://www.khoa.go.kr/oceandata/openapi/odmi/odmiApiList.do>
 
-The KHOA page currently displays 46 국가중점 ODMI detail pages. The site text says
-54 posts, but page 6 is empty and the detail-page data.go.kr mapping covers these
-46 entries.
+KHOA 페이지에서 실제 확인되는 국가중점 ODMI 상세 페이지는 46개입니다. 사이트
+문구에는 54건으로 표시되지만 6페이지가 비어 있고, 상세 페이지의 data.go.kr
+매핑도 아래 46개 항목을 기준으로 확인했습니다.
 
 | key | api_id | data.go.kr | title | required |
 | --- | --- | --- | --- | --- |
@@ -54,3 +54,49 @@ The KHOA page currently displays 46 국가중점 ODMI detail pages. The site tex
 | `rip_current` | `SV_AP_04_011` | `15156028` | 이안류 지수 | `beachCode` |
 | `ship_index` | `SV_AP_04_012` | `15156036` | 선박운항지수 | `category` |
 | `ocean_condition` | `SV_AP_04_013` | `15156040` | 해황예보도 | `areaCode` |
+
+## 비표준 포털 관측소 엔드포인트
+
+KHOA 포털 상세 페이지는 관측소 목록을 아래 AJAX 엔드포인트로 제공합니다.
+
+<https://www.khoa.go.kr/oceandata/openapi/getOpenApiInfo.do>
+
+요청은 form field `id`를 넣은 `POST`입니다. OpenAPI 상세 id `36`
+(`해수욕장 정보`)의 응답에는 `observatoryList` 행이 들어 있으며, 원문 필드는
+아래와 같습니다.
+
+- `id`: 해수욕장/관측소 코드. 예: `BCH001`
+- `name`: 한글 해수욕장 이름. 예: `해운대해수욕장`
+- `data_type`: `BEACH`
+- `lat`: WGS84 위도
+- `lon`: WGS84 경도
+
+`pykhoa`의 해수욕장 번들 목록은 위 원문 필드에 VWorld 역지오코딩 주소
+필드를 추가로 포함합니다.
+
+- `legal_dong_code`: 법정동코드
+- `road_address_code`: 도로명주소코드. VWorld가 도로명 결과를 주지 않는
+  지점은 `None`일 수 있습니다.
+- `parcel_address`: 지번 주소
+- `road_address`: 도로명 주소
+- `detail_address`: VWorld `structure.detail` 상세주소
+- `zipcode`: 우편번호
+- `address_latitude`, `address_longitude`: 주소 조회에 사용한 좌표
+- `address_distance_m`: 원 KHOA 좌표와 주소 조회 좌표 사이 거리
+- `address_match_type`: 원 좌표면 `exact`, 주변 좌표면 `nearby`
+- `address_source`: `vworld`
+
+2026-05-10 확인 기준:
+
+- 상세 id: `36`
+- 제목: `해수욕장 정보`
+- KHOA 페이지 수정 주기: `상시`
+- 이 라이브러리에서 사용하는 운영상 갱신 주기: 30분
+- 번들 관측소 수: 356
+- 주소 보강 방식: `pyvworld` VWorld 역지오코딩, 원 좌표 실패 시 주변 좌표 순차 확인
+- 번들 payload SHA-256: `9e66998c51c367388e756cf2c1af464a6318c451fdccb706435730e8cd2e653a`
+
+번들 목록은 `pykhoa.BEACH_OBSERVATORIES` 또는
+`pykhoa.get_beach_observatories()`로 사용합니다. 포털 엔드포인트에서 새로
+가져오려면 `pykhoa.fetch_observatory_list("36")`을 호출하고, live 결과에도
+주소를 붙이려면 `include_address=True`와 `pyvworld` 클라이언트를 전달합니다.

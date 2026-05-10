@@ -56,16 +56,19 @@ class KhoaClient:
         self,
         service_key: str | None = None,
         *,
+        api_key: str | None = None,
         base_url: str = DEFAULT_BASE_URL,
         service_key_param: str = "serviceKey",
         timeout: float = 10.0,
         retries: int = 3,
         session: SessionLike | None = None,
     ) -> None:
-        key = service_key or _first_env(DEFAULT_ENV_NAMES)
+        if service_key and api_key and service_key != api_key:
+            raise ValueError("service_key and api_key were both provided with different values")
+        key = api_key or service_key or _first_env(DEFAULT_ENV_NAMES)
         if not key:
             raise KhoaAuthError(
-                "service_key is required. Pass service_key=... or set KHOA_SERVICE_KEY.",
+                "api_key is required. Pass api_key=... or set KHOA_SERVICE_KEY.",
                 failure_kind="auth",
             )
         self.service_key = key
@@ -94,7 +97,7 @@ class KhoaClient:
         if not service_key:
             names = ", ".join((name, *fallback_names))
             raise KhoaAuthError(f"none of these environment variables are set: {names}")
-        return cls(service_key=service_key, **kwargs)
+        return cls(api_key=service_key, **kwargs)
 
     @property
     def services(self) -> tuple[ServiceDefinition, ...]:
