@@ -36,6 +36,12 @@ Get-Content -Path docs/testing.md -Raw -Encoding UTF8
 - 대상은 모듈 docstring, 클래스 docstring, 함수와 메서드 docstring, 설명 주석입니다.
 - 코드 식별자, API 파라미터명, endpoint, 외부 오류 메시지는 원문을 유지합니다.
 
+## 구현 방식
+
+- 불필요한 wrapper, adapter, facade, helper 계층을 새로 만들지 않습니다.
+- 다른 라이브러리에서 이미 검증된 구현 방식이 있으면 최소 수정에만 맞추려고 우회하지 말고, 라이선스와 의존성 호환성을 확인한 뒤 프로젝트 코드에 직접 반영합니다.
+- 외부 구현을 적용하면서 public API나 동작이 바뀌면 관련 문서와 테스트를 같은 변경 안에서 갱신합니다.
+
 ## API 키와 live test
 
 - 실제 `serviceKey`는 코드, fixture, 문서, 커밋 메시지에 남기지 않습니다.
