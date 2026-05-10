@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
+from pykrtour import PlaceCoordinate
 
 from ._convert import strip_or_none, to_datetime_or_none, to_float_or_none
 
@@ -39,8 +40,7 @@ class Observatory(KhoaModel):
 
     id: str
     name: str
-    latitude: float
-    longitude: float
+    coordinate: PlaceCoordinate
     data_type: str | None = None
     legal_dong_code: str | None = None
     road_address_code: str | None = None
@@ -49,39 +49,84 @@ class Observatory(KhoaModel):
     road_address: str | None = None
     detail_address: str | None = None
     zipcode: str | None = None
-    address_latitude: float | None = None
-    address_longitude: float | None = None
+    address_coordinate: PlaceCoordinate | None = None
     address_distance_m: float | None = None
     address_match_type: str | None = None
     address_source: str | None = None
     raw: dict[str, Any] = Field(default_factory=dict)
 
     @property
+    def latitude(self) -> float:
+        """호환성을 위해 제공하는 위도 값."""
+
+        return self.coordinate.lat
+
+    @property
+    def longitude(self) -> float:
+        """호환성을 위해 제공하는 경도 값."""
+
+        return self.coordinate.lon
+
+    @property
     def lat(self) -> float:
         """KHOA 포털 원문 필드명에 맞춘 위도 별칭."""
 
-        return self.latitude
+        return self.coordinate.lat
 
     @property
     def lon(self) -> float:
         """KHOA 포털 원문 필드명에 맞춘 경도 별칭."""
 
-        return self.longitude
+        return self.coordinate.lon
+
+    @property
+    def address_latitude(self) -> float | None:
+        """주소 조회에 사용한 보정 좌표의 위도입니다."""
+
+        return self.address_coordinate.lat if self.address_coordinate is not None else None
+
+    @property
+    def address_longitude(self) -> float | None:
+        """주소 조회에 사용한 보정 좌표의 경도입니다."""
+
+        return self.address_coordinate.lon if self.address_coordinate is not None else None
 
     @classmethod
     def from_raw(cls, row: Mapping[str, Any]) -> Observatory:
         """KHOA 포털 관측소 원문 행을 모델로 변환합니다."""
 
-        latitude = to_float_or_none(row.get("lat"))
-        longitude = to_float_or_none(row.get("lon"))
-        if latitude is None or longitude is None:
-            raise ValueError("KHOA observatory row requires lat/lon")
+        coordinate_value = row.get("coordinate")
+        if isinstance(coordinate_value, PlaceCoordinate):
+            coordinate = coordinate_value
+        elif isinstance(coordinate_value, Mapping):
+            coordinate = PlaceCoordinate.model_validate(coordinate_value)
+        else:
+            latitude = to_float_or_none(row.get("lat"))
+            longitude = to_float_or_none(row.get("lon"))
+            if latitude is None or longitude is None:
+                raise ValueError("KHOA observatory row requires lat/lon")
+            coordinate = PlaceCoordinate(lat=latitude, lon=longitude)
+
+        address_coordinate: PlaceCoordinate | None
+        address_coordinate_value = row.get("address_coordinate")
+        if isinstance(address_coordinate_value, PlaceCoordinate):
+            address_coordinate = address_coordinate_value
+        elif isinstance(address_coordinate_value, Mapping):
+            address_coordinate = PlaceCoordinate.model_validate(address_coordinate_value)
+        else:
+            address_latitude = to_float_or_none(row.get("address_latitude"))
+            address_longitude = to_float_or_none(row.get("address_longitude"))
+            address_coordinate = (
+                PlaceCoordinate(lat=address_latitude, lon=address_longitude)
+                if address_latitude is not None and address_longitude is not None
+                else None
+            )
+
         return cls(
             id=str(row["id"]),
             name=str(row["name"]),
             data_type=strip_or_none(row.get("data_type")),
-            latitude=latitude,
-            longitude=longitude,
+            coordinate=coordinate,
             legal_dong_code=_row_text(row, "legal_dong_code", "legalDongCode", "bjdCode"),
             road_address_code=_row_text(row, "road_address_code", "roadAddressCode"),
             road_name_code=_row_text(row, "road_name_code", "roadNameCode", "rnMgtSn"),
@@ -89,8 +134,7 @@ class Observatory(KhoaModel):
             road_address=_row_text(row, "road_address", "roadAddress"),
             detail_address=_row_text(row, "detail_address", "detailAddress"),
             zipcode=_row_text(row, "zipcode", "zip_code", "zipCode"),
-            address_latitude=to_float_or_none(row.get("address_latitude")),
-            address_longitude=to_float_or_none(row.get("address_longitude")),
+            address_coordinate=address_coordinate,
             address_distance_m=to_float_or_none(row.get("address_distance_m")),
             address_match_type=_row_text(row, "address_match_type", "addressMatchType"),
             address_source=_row_text(row, "address_source", "addressSource"),

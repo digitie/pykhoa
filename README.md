@@ -73,6 +73,7 @@ page = client.rip_current(beach_code="BCH001", req_date="20260507")
 26자리 도로명주소 관리코드이며, 12자리 도로명코드는 `road_name_code`로
 별도 제공합니다. VWorld에서 도로명 주소가 반환되지 않는 지점은
 `road_address_code`, `road_name_code`, `road_address`가 `None`일 수 있습니다.
+좌표 필드는 `pykrtour.PlaceCoordinate`를 직접 사용합니다.
 
 ```python
 from pykhoa import (
@@ -86,6 +87,7 @@ print(BEACH_INFO_UPDATE_INTERVAL_MINUTES)  # 30
 print(len(BEACH_OBSERVATORIES))  # 356, 네트워크 호출 없음
 
 beach = get_beach_observatories()[0]
+print(beach.coordinate.lat, beach.coordinate.lon)
 print(beach.legal_dong_code, beach.road_address_code, beach.detail_address)
 
 live = fetch_observatory_list("36")  # KHOA 포털 AJAX 엔드포인트로 POST

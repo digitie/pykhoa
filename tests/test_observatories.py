@@ -4,6 +4,8 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
+from pykrtour import PlaceCoordinate
+
 from pykhoa import (
     BEACH_INFO_UPDATE_INTERVAL_MINUTES,
     BEACH_OBSERVATORIES,
@@ -69,6 +71,7 @@ def test_bundled_beach_observatories_are_available():
 
     haeundae = next(item for item in BEACH_OBSERVATORIES if item.id == "BCH001")
     assert haeundae.name == "해운대해수욕장"
+    assert haeundae.coordinate == PlaceCoordinate(lat=35.158, lon=129.159)
     assert haeundae.lat == 35.158
     assert haeundae.lon == 129.159
     assert hasattr(haeundae, "legal_dong_code")
@@ -104,6 +107,7 @@ def test_fetch_observatory_list_uses_nonstandard_portal_endpoint():
     assert session.calls[0]["headers"]["X-Requested-With"] == "XMLHttpRequest"
     assert observatories[0].id == "BCH001"
     assert observatories[0].name == "해운대해수욕장"
+    assert observatories[0].coordinate == PlaceCoordinate(lat=35.158, lon=129.159)
 
 
 def test_fetch_observatory_list_can_enrich_address_from_vworld_payload():
@@ -137,6 +141,8 @@ def test_fetch_observatory_list_can_enrich_address_from_vworld_payload():
     assert observatories[0].road_address == "부산광역시 해운대구 해운대해변로 264"
     assert observatories[0].detail_address == "해운대해수욕장"
     assert observatories[0].zipcode == "48094"
+    assert observatories[0].coordinate == PlaceCoordinate(lat=35.158, lon=129.159)
+    assert observatories[0].address_coordinate == PlaceCoordinate(lat=35.158, lon=129.159)
     assert observatories[0].address_match_type == "exact"
     assert vworld.calls[0]["lat"] == 35.158
     assert vworld.calls[0]["lon"] == 129.159
@@ -153,6 +159,8 @@ def test_get_beach_observatories_returns_bundled_address_fields():
     assert haeundae.road_address_code
     assert len(haeundae.road_address_code) == 26
     assert haeundae.road_name_code
+    assert haeundae.coordinate == PlaceCoordinate(lat=35.158, lon=129.159)
+    assert isinstance(haeundae.address_coordinate, PlaceCoordinate)
     assert haeundae.parcel_address
     assert haeundae.detail_address
     assert haeundae.address_source == "vworld"
@@ -169,6 +177,7 @@ def test_enrich_observatory_addresses_accepts_small_tuple():
     observatories = enrich_observatory_addresses(BEACH_OBSERVATORIES[:1], vworld_client=vworld)
 
     assert observatories[0].legal_dong_code == "2635010500"
+    assert observatories[0].address_coordinate == observatories[0].coordinate
     assert len(vworld.calls) == 1
 
 

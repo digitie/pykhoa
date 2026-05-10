@@ -11,7 +11,6 @@ from __future__ import annotations
 import base64
 import importlib
 import json
-import math
 import re
 import zlib
 from collections.abc import Mapping
@@ -19,6 +18,7 @@ from os import PathLike
 from typing import Any, Final, Protocol, cast
 
 import requests
+from pykrtour import PlaceCoordinate
 
 from .exceptions import KhoaParseError, KhoaRequestError, KhoaServerError
 from .models import Observatory
@@ -632,19 +632,18 @@ def _lookup_vworld_address_fields(
     search_offsets_degrees: tuple[float, ...],
 ) -> dict[str, Any]:
     merged: dict[str, Any] = {}
-    first_match: tuple[float, float, float, str] | None = None
+    first_match: tuple[PlaceCoordinate, float, str] | None = None
     found_parcel = False
     found_road = False
 
-    for lat, lon, distance_m, match_type in _nearby_lookup_points(
-        observatory.latitude,
-        observatory.longitude,
+    for coordinate, distance_m, match_type in _nearby_lookup_points(
+        observatory.coordinate,
         search_offsets_degrees,
     ):
         try:
             payload = client.reverse_geocode_latlon(
-                lat,
-                lon,
+                coordinate.lat,
+                coordinate.lon,
                 type="both",
                 zipcode=True,
                 simple=False,
@@ -662,7 +661,7 @@ def _lookup_vworld_address_fields(
         fields = _extract_vworld_address_fields(payload)
         if fields:
             if first_match is None:
-                first_match = (lat, lon, distance_m, match_type)
+                first_match = (coordinate, distance_m, match_type)
             if not found_parcel and (
                 fields.get("legal_dong_code") or fields.get("parcel_address")
             ):
@@ -691,9 +690,8 @@ def _lookup_vworld_address_fields(
                 break
 
     if merged and first_match is not None:
-        lat, lon, distance_m, match_type = first_match
-        merged["address_latitude"] = lat
-        merged["address_longitude"] = lon
+        coordinate, distance_m, match_type = first_match
+        merged["address_coordinate"] = coordinate
         merged["address_distance_m"] = round(distance_m, 3)
         merged["address_match_type"] = match_type
         merged["address_source"] = "vworld"
@@ -933,11 +931,10 @@ def _first_text(*values: object) -> str | None:
 
 
 def _nearby_lookup_points(
-    latitude: float,
-    longitude: float,
+    coordinate: PlaceCoordinate,
     offsets_degrees: tuple[float, ...],
-) -> tuple[tuple[float, float, float, str], ...]:
-    points: list[tuple[float, float, float, str]] = []
+) -> tuple[tuple[PlaceCoordinate, float, str], ...]:
+    points: list[tuple[PlaceCoordinate, float, str]] = []
     seen: set[tuple[float, float]] = set()
     for offset in offsets_degrees:
         if offset < 0:
@@ -956,32 +953,23 @@ def _nearby_lookup_points(
                 (-offset, -offset),
             )
         )
-        ring: list[tuple[float, float, float, str]] = []
+        ring: list[tuple[PlaceCoordinate, float, str]] = []
         for lat_delta, lon_delta in candidates:
-            lat = latitude + lat_delta
-            lon = longitude + lon_delta
+            candidate = PlaceCoordinate(
+                lat=coordinate.lat + lat_delta,
+                lon=coordinate.lon + lon_delta,
+            )
+            lat = candidate.lat
+            lon = candidate.lon
             key = (round(lat, 7), round(lon, 7))
             if key in seen:
                 continue
             seen.add(key)
-            distance_m = _distance_m(latitude, longitude, lat, lon)
+            distance_m = coordinate.distance_to_m(candidate)
             match_type = "exact" if distance_m == 0 else "nearby"
-            ring.append((lat, lon, distance_m, match_type))
-        points.extend(sorted(ring, key=lambda item: item[2]))
+            ring.append((candidate, distance_m, match_type))
+        points.extend(sorted(ring, key=lambda item: item[1]))
     return tuple(points)
-
-
-def _distance_m(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    radius_m = 6_371_000.0
-    lat1_rad = math.radians(lat1)
-    lat2_rad = math.radians(lat2)
-    lat_delta = math.radians(lat2 - lat1)
-    lon_delta = math.radians(lon2 - lon1)
-    half_chord = (
-        math.sin(lat_delta / 2) ** 2
-        + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(lon_delta / 2) ** 2
-    )
-    return 2 * radius_m * math.asin(math.sqrt(half_chord))
 
 
 def _is_vworld_not_found(exc: Exception) -> bool:

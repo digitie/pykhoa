@@ -25,6 +25,7 @@ classifiers = [
 ]
 dependencies = [
   "pydantic>=2.7",
+  "pykrtour>=0.1.0",
   "requests>=2.31",
   "tzdata>=2024.1; platform_system == 'Windows'",
 ]
@@ -56,6 +57,7 @@ select = ["E", "F", "I", "UP", "B"]
 python_version = "3.11"
 strict = true
 warn_unused_ignores = true
+mypy_path = "../pykrtour"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
