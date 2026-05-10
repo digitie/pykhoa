@@ -69,9 +69,10 @@ page = client.rip_current(beach_code="BCH001", req_date="20260507")
 
 번들 해수욕장 목록에는 `pyvworld`의 VWorld 역지오코딩으로 얻은 주소 정보도
 함께 들어 있습니다. 좌표가 해상이나 백사장 위에 있어 원 좌표에서 주소가
-나오지 않는 경우에는 가까운 주변 좌표를 순차 확인합니다. VWorld에서 도로명
-주소가 반환되지 않는 지점은 `road_address_code`와 `road_address`가 `None`일
-수 있습니다.
+나오지 않는 경우에는 가까운 주변 좌표를 순차 확인합니다. `road_address_code`는
+26자리 도로명주소 관리코드이며, 12자리 도로명코드는 `road_name_code`로
+별도 제공합니다. VWorld에서 도로명 주소가 반환되지 않는 지점은
+`road_address_code`, `road_name_code`, `road_address`가 `None`일 수 있습니다.
 
 ```python
 from pykhoa import (

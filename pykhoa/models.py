@@ -44,6 +44,7 @@ class Observatory(KhoaModel):
     data_type: str | None = None
     legal_dong_code: str | None = None
     road_address_code: str | None = None
+    road_name_code: str | None = None
     parcel_address: str | None = None
     road_address: str | None = None
     detail_address: str | None = None
@@ -83,6 +84,7 @@ class Observatory(KhoaModel):
             longitude=longitude,
             legal_dong_code=_row_text(row, "legal_dong_code", "legalDongCode", "bjdCode"),
             road_address_code=_row_text(row, "road_address_code", "roadAddressCode"),
+            road_name_code=_row_text(row, "road_name_code", "roadNameCode", "rnMgtSn"),
             parcel_address=_row_text(row, "parcel_address", "parcelAddress"),
             road_address=_row_text(row, "road_address", "roadAddress"),
             detail_address=_row_text(row, "detail_address", "detailAddress"),

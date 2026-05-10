@@ -131,7 +131,8 @@ def test_fetch_observatory_list_can_enrich_address_from_vworld_payload():
     )
 
     assert observatories[0].legal_dong_code == "2635010500"
-    assert observatories[0].road_address_code == "4199299"
+    assert observatories[0].road_address_code == "26350530419929900026400000"
+    assert observatories[0].road_name_code == "263504199299"
     assert observatories[0].parcel_address == "부산광역시 해운대구 우동 622-8"
     assert observatories[0].road_address == "부산광역시 해운대구 해운대해변로 264"
     assert observatories[0].detail_address == "해운대해수욕장"
@@ -150,9 +151,16 @@ def test_get_beach_observatories_returns_bundled_address_fields():
     haeundae = next(item for item in observatories if item.id == "BCH001")
     assert haeundae.legal_dong_code
     assert haeundae.road_address_code
+    assert len(haeundae.road_address_code) == 26
+    assert haeundae.road_name_code
     assert haeundae.parcel_address
     assert haeundae.detail_address
     assert haeundae.address_source == "vworld"
+    assert all(
+        len(item.road_address_code) == 26
+        for item in observatories
+        if item.road_address_code
+    )
 
 
 def test_enrich_observatory_addresses_accepts_small_tuple():
@@ -186,6 +194,8 @@ def _vworld_address_payload() -> Mapping[str, Any]:
                     "structure": {
                         "level4L": "해운대해변로",
                         "level4LC": "4199299",
+                        "level4AC": "2635053000",
+                        "level5": "264",
                         "detail": "해운대해수욕장",
                     },
                 },
