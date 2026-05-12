@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from pykhoa import KhoaClient
+from khoa import KhoaClient
 
 
 class FakeResponse:

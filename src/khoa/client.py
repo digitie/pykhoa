@@ -1,4 +1,4 @@
-"""User-facing KHOA ODMI client."""
+"""사용자 진입점으로 제공하는 KHOA ODMI 클라이언트."""
 
 from __future__ import annotations
 
@@ -50,7 +50,7 @@ _PARAM_ALIASES: dict[str, str] = {
 
 
 class KhoaClient:
-    """Client for KHOA ODMI services published through data.go.kr."""
+    """data.go.kr를 통해 공개된 KHOA ODMI 서비스 클라이언트."""
 
     def __init__(
         self,
@@ -91,7 +91,7 @@ class KhoaClient:
         fallback_names: tuple[str, ...] = DEFAULT_ENV_NAMES[1:],
         **kwargs: Any,
     ) -> KhoaClient:
-        """Create a client from environment variables."""
+        """환경변수에서 인증키를 읽어 클라이언트를 만듭니다."""
 
         service_key = os.getenv(name) or _first_env(fallback_names)
         if not service_key:
@@ -101,12 +101,12 @@ class KhoaClient:
 
     @property
     def services(self) -> tuple[ServiceDefinition, ...]:
-        """Return the bundled KHOA ODMI service catalog."""
+        """번들 KHOA ODMI 서비스 카탈로그를 반환합니다."""
 
         return SERVICE_DEFINITIONS
 
     def service(self, key: str | ServiceDefinition) -> ServiceDefinition:
-        """Return one service definition by key, API ID, operation, or Korean title."""
+        """key, API ID, operation, 한글 제목으로 서비스 정의 하나를 반환합니다."""
 
         return get_service(key)
 
@@ -134,7 +134,7 @@ class KhoaClient:
         validate_required: bool = True,
         **kwargs: Any,
     ) -> Page[RawRecord]:
-        """Call any KHOA ODMI service and return normalized raw item mappings."""
+        """임의 KHOA ODMI 서비스를 호출하고 정규화된 원문 item mapping을 반환합니다."""
 
         definition = get_service(service)
         request_params = self._request_params(
@@ -161,7 +161,7 @@ class KhoaClient:
         )
 
     def items(self, service: str | ServiceDefinition, **kwargs: Any) -> tuple[RawRecord, ...]:
-        """Call a service and return only response items."""
+        """서비스를 호출하고 응답 item만 반환합니다."""
 
         return self.fetch(service, **kwargs).items
 
@@ -176,7 +176,7 @@ class KhoaClient:
         max_items: int | None = None,
         **kwargs: Any,
     ) -> Iterator[Page[RawRecord]]:
-        """Iterate paginated KHOA responses with optional safety guards."""
+        """선택적 안전 제한과 함께 KHOA 페이지 응답을 순회합니다."""
 
         next_page = page_no
         pages = 0
@@ -214,7 +214,7 @@ class KhoaClient:
         include: str | tuple[str, ...] | list[str] | None = None,
         exclude: str | tuple[str, ...] | list[str] | None = None,
     ) -> Page[RomsPrediction]:
-        """Fetch and parse ROMS numerical prediction rows."""
+        """ROMS 수치예측 행을 가져와 typed 모델로 변환합니다."""
 
         page = self.fetch(
             "roms",
@@ -242,7 +242,7 @@ class KhoaClient:
         params: Mapping[str, Any] | None = None,
         **kwargs: Any,
     ) -> RawRecord:
-        """Return the first raw item or raise KhoaNoDataError."""
+        """첫 번째 원문 item을 반환하거나 KhoaNoDataError를 발생시킵니다."""
 
         page = self.fetch(service, params, **kwargs)
         if not page.items:

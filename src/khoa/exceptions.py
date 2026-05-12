@@ -1,10 +1,10 @@
-"""Exceptions raised by pykhoa."""
+"""khoa가 발생시키는 예외."""
 
 from __future__ import annotations
 
 
 class KhoaError(Exception):
-    """Base class for pykhoa errors."""
+    """khoa 예외의 공통 기반 클래스."""
 
     def __init__(
         self,
@@ -29,24 +29,24 @@ class KhoaError(Exception):
 
 
 class KhoaAuthError(KhoaError):
-    """Authentication or missing service-key failure."""
+    """인증 실패 또는 serviceKey 누락 오류."""
 
 
 class KhoaRateLimitError(KhoaError):
-    """Quota or traffic-limit failure."""
+    """quota 또는 traffic limit 오류."""
 
 
 class KhoaRequestError(KhoaError):
-    """Invalid request or parameter failure."""
+    """잘못된 요청 또는 파라미터 오류."""
 
 
 class KhoaServerError(KhoaError):
-    """Upstream server failure."""
+    """상위 KHOA/data.go.kr 서버 오류."""
 
 
 class KhoaParseError(KhoaError):
-    """Unexpected response shape or parse failure."""
+    """예상하지 못한 응답 형태 또는 파싱 오류."""
 
 
 class KhoaNoDataError(KhoaError):
-    """Raised by helpers that require at least one item."""
+    """최소 한 개 item이 필요한 helper에서 발생하는 오류."""

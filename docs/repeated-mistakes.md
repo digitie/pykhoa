@@ -1,6 +1,6 @@
 # 반복 실수 방지
 
-이 문서는 `pykhoa` 작업 중 반복되기 쉬운 실수를 줄이기 위한 체크리스트입니다.
+이 문서는 `python-khoa-api` 작업 중 반복되기 쉬운 실수를 줄이기 위한 체크리스트입니다.
 
 ## 로컬 도구
 
@@ -27,7 +27,7 @@ Get-Content -Path docs/testing.md -Raw -Encoding UTF8
 ## 문서 경로
 
 - 문서의 파일 위치 정보는 프로젝트 루트 기준 상대 경로로 작성합니다.
-- 좋은 예: `pykhoa/client.py`, `docs/openapi-catalog.md`, `tests/test_live.py`
+- 좋은 예: `src/khoa/client.py`, `docs/openapi-catalog.md`, `tests/test_live.py`
 - 나쁜 예: 로컬 사용자 환경에 묶인 절대 경로
 
 ## Python 내부 문서

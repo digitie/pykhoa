@@ -1,4 +1,4 @@
-"""Small conversion helpers used by the public client."""
+"""공개 클라이언트에서 쓰는 작은 변환 헬퍼."""
 
 from __future__ import annotations
 
@@ -11,13 +11,13 @@ KST = ZoneInfo("Asia/Seoul")
 
 
 def without_none(values: Mapping[str, Any]) -> dict[str, Any]:
-    """Return a dict with keys whose value is not None."""
+    """값이 None이 아닌 항목만 담은 dict를 반환합니다."""
 
     return {key: value for key, value in values.items() if value is not None}
 
 
 def strip_or_none(value: object) -> str | None:
-    """Return stripped text, or None for empty values."""
+    """공백을 제거한 문자열을 반환하고, 빈 값이면 None을 반환합니다."""
 
     if value is None:
         return None
@@ -26,7 +26,7 @@ def strip_or_none(value: object) -> str | None:
 
 
 def csv_or_none(value: object) -> str | None:
-    """Return a comma-separated string for list-like query parameters."""
+    """list 계열 query parameter를 쉼표 구분 문자열로 반환합니다."""
 
     if value is None:
         return None
@@ -63,7 +63,7 @@ def to_float_or_none(value: object) -> float | None:
 
 
 def to_yyyymmdd(value: str | date | datetime | None, *, field: str) -> str | None:
-    """Normalize a date-like value to YYYYMMDD."""
+    """날짜 형태 값을 YYYYMMDD 문자열로 정규화합니다."""
 
     if value is None:
         return None
@@ -82,7 +82,7 @@ def to_yyyymmdd(value: str | date | datetime | None, *, field: str) -> str | Non
 
 
 def to_datetime_or_none(value: object) -> datetime | None:
-    """Parse common KHOA date-time strings as Asia/Seoul datetimes."""
+    """흔한 KHOA 날짜/시간 문자열을 Asia/Seoul datetime으로 파싱합니다."""
 
     text = strip_or_none(value)
     if text is None:

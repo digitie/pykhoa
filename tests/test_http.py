@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from pykhoa import KhoaAuthError, KhoaParseError, KhoaRequestError
+from khoa import KhoaAuthError, KhoaParseError, KhoaRequestError
 
 from .conftest import FakeResponse, khoa_payload
 

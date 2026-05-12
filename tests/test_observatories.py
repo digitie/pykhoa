@@ -6,7 +6,7 @@ from typing import Any
 
 from pykrtour import Address, PlaceCoordinate
 
-from pykhoa import (
+from khoa import (
     BEACH_INFO_UPDATE_INTERVAL_MINUTES,
     BEACH_OBSERVATORIES,
     BEACH_OBSERVATORY_COUNT,

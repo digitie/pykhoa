@@ -1,4 +1,4 @@
-"""HTTP helpers for KHOA ODMI APIs served through data.go.kr."""
+"""data.go.kr를 통해 제공되는 KHOA ODMI API HTTP 헬퍼."""
 
 from __future__ import annotations
 
@@ -33,11 +33,11 @@ class SessionLike(Protocol):
 
 
 TRANSIENT_STATUSES = {429, 500, 502, 503, 504}
-DEFAULT_USER_AGENT = "pykhoa/0.1 (+https://www.khoa.go.kr/oceandata/openapi/odmi)"
+DEFAULT_USER_AGENT = "python-khoa-api/0.1 (+https://www.khoa.go.kr/oceandata/openapi/odmi)"
 
 
 def build_session(retries: int = 3) -> SessionLike:
-    """Build a requests session with conservative GET retries."""
+    """보수적인 GET 재시도를 설정한 requests 세션을 만듭니다."""
 
     session = requests.Session()
     session.headers.update({"User-Agent": DEFAULT_USER_AGENT})
@@ -60,7 +60,7 @@ def build_session(retries: int = 3) -> SessionLike:
 
 
 class KhoaHttp:
-    """Low-level JSON HTTP client for KHOA ODMI endpoints."""
+    """KHOA ODMI 엔드포인트용 저수준 JSON HTTP 클라이언트."""
 
     def __init__(
         self,
@@ -85,7 +85,7 @@ class KhoaHttp:
         service: ServiceDefinition,
         params: Mapping[str, Any],
     ) -> tuple[Mapping[str, Any], str]:
-        """Call a service and return the decoded JSON payload plus request URL."""
+        """서비스를 호출하고 디코딩된 JSON payload와 요청 URL을 반환합니다."""
 
         url = f"{self.base_url}/{service.endpoint}"
         request_params = {self.service_key_param: self.service_key, **dict(params)}

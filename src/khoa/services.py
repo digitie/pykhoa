@@ -1,7 +1,8 @@
-"""KHOA ODMI service catalog.
+"""KHOA ODMI 서비스 카탈로그.
 
-The catalog is based on the KHOA Badanuri ODMI OpenAPI list and the matching
-data.go.kr OpenAPI pages. KHOA currently exposes 46 국가중점 ODMI detail pages.
+카탈로그는 KHOA 바다누리 ODMI OpenAPI 목록과 연결된 data.go.kr OpenAPI
+페이지를 기준으로 합니다. KHOA는 현재 국가중점 ODMI 상세 페이지 46개를
+노출합니다.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ KHOA_ODMI_LIST_URL: Final = "https://www.khoa.go.kr/oceandata/openapi/odmi/odmiA
 
 @dataclass(frozen=True, slots=True)
 class ServiceDefinition:
-    """One KHOA ODMI OpenAPI operation."""
+    """KHOA ODMI OpenAPI operation 하나의 정의."""
 
     key: str
     api_id: str
@@ -618,7 +619,7 @@ SERVICE_BY_KEY: Final[dict[str, ServiceDefinition]] = {
 
 
 def get_service(key: str | ServiceDefinition) -> ServiceDefinition:
-    """Return a service definition by key, API ID, operation name, or Korean title."""
+    """key, API ID, operation 이름, 한글 제목으로 서비스 정의를 반환합니다."""
 
     if isinstance(key, ServiceDefinition):
         return key

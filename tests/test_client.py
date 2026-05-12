@@ -4,8 +4,8 @@ from datetime import date
 
 import pytest
 
-from pykhoa import KhoaClient, KhoaRequestError, RomsPrediction
-from pykhoa.exceptions import KhoaAuthError, KhoaNoDataError
+from khoa import KhoaClient, KhoaRequestError, RomsPrediction
+from khoa.exceptions import KhoaAuthError, KhoaNoDataError
 
 from .conftest import FakeResponse, khoa_payload
 

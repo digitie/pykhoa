@@ -4,7 +4,7 @@ import os
 
 import pytest
 
-from pykhoa import KhoaAuthError, KhoaClient, KhoaRateLimitError
+from khoa import KhoaAuthError, KhoaClient, KhoaRateLimitError
 
 pytestmark = pytest.mark.live
 

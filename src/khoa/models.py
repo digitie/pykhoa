@@ -1,4 +1,4 @@
-"""pykhoa가 사용자에게 반환하는 Pydantic 응답 모델."""
+"""khoa가 사용자에게 반환하는 Pydantic 응답 모델."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ RawRecord = Mapping[str, Any]
 
 
 class KhoaModel(BaseModel):
-    """pykhoa 응답 모델의 공통 불변 기반 클래스."""
+    """khoa 응답 모델의 공통 불변 기반 클래스."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 

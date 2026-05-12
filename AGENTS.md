@@ -2,7 +2,7 @@
 
 ## 역할
 
-이 문서는 `pykhoa`에서 작업하는 Codex/agent를 위한 운영 가이드입니다. 작업 전에 먼저 이 파일을 읽고, 세부 API 목록은 `docs/openapi-catalog.md`, 테스트 규칙은 `docs/testing.md`, 사용자 예시는 `README.md`를 함께 확인합니다.
+이 문서는 `python-khoa-api`에서 작업하는 Codex/agent를 위한 운영 가이드입니다. 작업 전에 먼저 이 파일을 읽고, 세부 API 목록은 `docs/openapi-catalog.md`, 테스트 규칙은 `docs/testing.md`, 사용자 예시는 `README.md`를 함께 확인합니다.
 
 ## 지시 우선순위
 
@@ -18,7 +18,8 @@
 
 ## 프로젝트 기준
 
-- `pykhoa`는 국립해양조사원 KHOA 바다누리 ODMI OpenAPI의 비공식 Python 클라이언트입니다.
+- `python-khoa-api`는 국립해양조사원 KHOA 바다누리 ODMI OpenAPI의 비공식 Python 클라이언트입니다.
+- Python import 패키지 이름은 `khoa`입니다.
 - 대상 API는 data.go.kr을 통해 제공되는 KHOA ODMI 국가중점 OpenAPI입니다.
 - 서비스 카탈로그의 기준 문서는 `docs/openapi-catalog.md`입니다.
 - 범용 호출은 `KhoaClient.fetch()`가 담당하고, 안정적으로 모델링한 응답은 별도 typed helper와 Pydantic 모델로 제공합니다.
@@ -28,7 +29,7 @@
 
 ## 구현 방향
 
-- 불필요한 wrapper, adapter, facade, helper 계층을 만들지 않습니다. 기존 라이브러리나 표준 도구가 이미 해결한 동작은 가능한 한 `pykhoa`의 실제 호출 지점이나 모델 변환 지점에 직접 반영합니다.
+- 불필요한 wrapper, adapter, facade, helper 계층을 만들지 않습니다. 기존 라이브러리나 표준 도구가 이미 해결한 동작은 가능한 한 `khoa`의 실제 호출 지점이나 모델 변환 지점에 직접 반영합니다.
 - 다른 라이브러리의 구현 방식이 이 프로젝트 문제를 더 정확하게 해결한다면 단순히 변경 범위를 작게 유지하는 것보다 그 구현 방식을 바로 적용하는 쪽을 우선합니다.
 - 외부 라이브러리의 구현을 참고하거나 가져올 때는 라이선스, 출처, 의존성 호환성을 먼저 확인하고, 새 public API나 동작 변경이 생기면 문서와 테스트를 함께 갱신합니다.
 
@@ -39,12 +40,12 @@
 - `docs/testing.md`: 로컬 검증, live test 실행 방법, data.go.kr 403 처리 안내.
 - `docs/repeated-mistakes.md`: 이 저장소에서 반복하지 말아야 할 작업 실수와 환경 함정.
 - `pyproject.toml`: 패키징, 의존성, lint, test, type-check 설정.
-- `pykhoa/client.py`: 사용자 진입점, 범용 호출, 페이지 처리, typed helper.
-- `pykhoa/_http.py`: HTTP transport, retry, 상태 코드와 XML 오류 매핑.
-- `pykhoa/_convert.py`: 문자열, 날짜, 숫자, CSV 파라미터 변환.
-- `pykhoa/services.py`: KHOA ODMI 서비스 카탈로그.
-- `pykhoa/models.py`: 사용자에게 반환하는 Pydantic 모델.
-- `pykhoa/exceptions.py`: 예외 계층.
+- `src/khoa/client.py`: 사용자 진입점, 범용 호출, 페이지 처리, typed helper.
+- `src/khoa/_http.py`: HTTP transport, retry, 상태 코드와 XML 오류 매핑.
+- `src/khoa/_convert.py`: 문자열, 날짜, 숫자, CSV 파라미터 변환.
+- `src/khoa/services.py`: KHOA ODMI 서비스 카탈로그.
+- `src/khoa/models.py`: 사용자에게 반환하는 Pydantic 모델.
+- `src/khoa/exceptions.py`: 예외 계층.
 - `tests/`: 네트워크 없는 단위 테스트와 opt-in live test.
 
 ## 반드시 지킬 것
@@ -54,7 +55,7 @@
 - data.go.kr는 HTTP 200으로도 body-level 오류를 줄 수 있으므로 header/result code를 반드시 확인합니다.
 - KHOA 응답의 `items.item`은 단일 dict 또는 list일 수 있으므로 항상 정규화합니다.
 - 선행 0이 의미 있는 코드와 관측소 식별자는 `int`로 변환하지 않습니다.
-- 문서의 파일 위치 정보는 프로젝트 루트 기준 상대 경로로 작성합니다. 예: `pykhoa/client.py`, `docs/testing.md`.
+- 문서의 파일 위치 정보는 프로젝트 루트 기준 상대 경로로 작성합니다. 예: `src/khoa/client.py`, `docs/testing.md`.
 - 저장소 문서에는 로컬 절대 경로를 남기지 않습니다.
 - Python 내부 문서와 유지보수용 설명은 한글로 작성합니다. 모듈, 클래스, 함수, 메서드 docstring과 설명 주석이 여기에 포함됩니다.
 - 코드 식별자, API 파라미터, endpoint, enum 값, 외부 오류 메시지는 원문을 유지합니다.
@@ -74,9 +75,9 @@
 
 담당 파일:
 
-- `pykhoa/client.py`
-- `pykhoa/_http.py`
-- `pykhoa/_convert.py`
+- `src/khoa/client.py`
+- `src/khoa/_http.py`
+- `src/khoa/_convert.py`
 
 확인할 것:
 
@@ -89,7 +90,7 @@
 
 담당 파일:
 
-- `pykhoa/services.py`
+- `src/khoa/services.py`
 - `docs/openapi-catalog.md`
 
 확인할 것:
@@ -102,7 +103,7 @@
 
 담당 파일:
 
-- `pykhoa/models.py`
+- `src/khoa/models.py`
 
 확인할 것:
 
@@ -148,10 +149,10 @@
 기본 검증:
 
 ```bash
-python -m compileall pykhoa tests
+python -m compileall src/khoa tests
 python -m pytest
 python -m ruff check .
-python -m mypy pykhoa
+python -m mypy src/khoa
 ```
 
 실제 API 검증:

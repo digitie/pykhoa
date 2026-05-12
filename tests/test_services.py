@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from pykhoa import SERVICE_DEFINITIONS, get_service
+from khoa import SERVICE_DEFINITIONS, get_service
 
 
 def test_catalog_contains_current_khoa_odmi_services():
