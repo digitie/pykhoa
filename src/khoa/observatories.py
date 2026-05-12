@@ -18,7 +18,7 @@ from os import PathLike
 from typing import Any, Final, Protocol, cast
 
 import requests
-from pykrtour import (
+from kraddr.base import (
     Address,
     AddressRegion,
     JibunAddress,
@@ -84,7 +84,7 @@ class PortalSessionLike(Protocol):
 
 
 class VworldReverseGeocoderLike(Protocol):
-    """pyvworld 역지오코딩 클라이언트에 필요한 최소 프로토콜."""
+    """VWorld 역지오코딩 클라이언트에 필요한 최소 프로토콜."""
 
     def reverse_geocode_latlon(self, lat: float, lon: float, **kwargs: Any) -> Mapping[str, Any]:
         """WGS84 위도/경도 좌표를 VWorld 주소 응답으로 변환합니다."""
@@ -579,7 +579,7 @@ def enrich_observatory_addresses(
     timeout: float = 10.0,
     search_offsets_degrees: tuple[float, ...] = DEFAULT_ADDRESS_SEARCH_OFFSETS_DEGREES,
 ) -> tuple[Observatory, ...]:
-    """pyvworld 역지오코딩 결과를 관측소 목록에 붙입니다."""
+    """VWorld 역지오코딩 결과를 관측소 목록에 붙입니다."""
 
     client = _resolve_vworld_client(
         vworld_client,
@@ -611,10 +611,10 @@ def _resolve_vworld_client(
     if vworld_client is not None:
         return vworld_client
     try:
-        module = importlib.import_module("pyvworld")
+        module = importlib.import_module("vworld")
     except ModuleNotFoundError as exc:
         raise KhoaRequestError(
-            "주소 보강에는 pyvworld 패키지가 필요합니다.",
+            "주소 보강에는 python-vworld-api 패키지가 필요합니다.",
             endpoint="https://api.vworld.kr/req/address",
             failure_kind="request",
             retryable=False,

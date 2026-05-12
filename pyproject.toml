@@ -25,7 +25,7 @@ classifiers = [
 ]
 dependencies = [
   "pydantic>=2.7",
-  "pykrtour>=0.1.4",
+  "python-kraddr-base @ file:../python-kraddr-base",
   "requests>=2.31",
   "tzdata>=2024.1; platform_system == 'Windows'",
 ]
@@ -58,7 +58,7 @@ select = ["E", "F", "I", "UP", "B"]
 python_version = "3.11"
 strict = true
 warn_unused_ignores = true
-mypy_path = "../pykrtour"
+mypy_path = "../python-kraddr-base/src"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -4,7 +4,7 @@ import json
 from collections.abc import Mapping
 from typing import Any
 
-from pykrtour import Address, PlaceCoordinate
+from kraddr.base import Address, PlaceCoordinate
 
 from khoa import (
     BEACH_INFO_UPDATE_INTERVAL_MINUTES,

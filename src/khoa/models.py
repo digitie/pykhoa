@@ -6,8 +6,7 @@ from collections.abc import Mapping
 from datetime import datetime
 from typing import Any, Generic, TypeVar
 
-from pydantic import BaseModel, ConfigDict, Field
-from pykrtour import (
+from kraddr.base import (
     Address,
     AddressRegion,
     JibunAddress,
@@ -17,6 +16,7 @@ from pykrtour import (
     RoadNameAddressCode,
     RoadNameCode,
 )
+from pydantic import BaseModel, ConfigDict, Field
 
 from ._convert import strip_or_none, to_datetime_or_none, to_float_or_none
 
