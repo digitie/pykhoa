@@ -57,6 +57,59 @@ print(prediction.predicted_at, prediction.water_temperature_c)
 page = client.rip_current(beach_code="BCH001", req_date="20260507")
 ```
 
+`beach_index()`는 해수욕지수 원문 행을 해수욕장별 DTO로 묶어 반환합니다.
+장소 하나가 여러 예보 슬롯을 `forecasts`에 담고, VWorld 역지오코딩 주소 필드는
+선택적으로 붙일 수 있습니다. `python-vworld-api`의 `vworld` 패키지가 설치되어
+있고 `VWORLD_API_KEY`가 환경변수나 `.env` 파일에 있어야 합니다.
+
+```python
+page = client.beach_index(num_of_rows=3)
+address_page = client.beach_index(
+    num_of_rows=3,
+    include_address=True,
+    vworld_env_file=".env",
+)
+
+place = address_page.items[0]
+print(place.name, place.parcel_address, place.road_address)
+for forecast in place.forecasts:
+    print(forecast.predicted_on, forecast.forecast_period, forecast.open_status)
+```
+
+KHOA 직접 endpoint인 `https://khoa.go.kr/oceandata/api/beach/search.do`는
+`beach_search()`로 호출합니다. 이 endpoint는 data.go.kr ODMI 키가 아니라 KHOA
+직접 `ServiceKey`를 요구할 수 있으므로 필요하면 `service_key=`로 별도 키를 넘깁니다.
+결과는 해수욕장 단위 `BeachSearchResult` DTO이며, 번들 해수욕장 목록의 좌표/주소가
+가능한 경우 함께 붙습니다.
+
+```python
+result = client.beach_search("BCH001", service_key="...")
+print(result.name, result.parcel_address)
+for observation in result.observations:
+    print(observation.observed_at, observation.water_temperature_c)
+```
+
+해수욕지수 외의 주요 해양 레저 지수도 장소별 DTO로 묶어 반환합니다. 같은 장소의
+여러 예보 행은 `MarineIndexPlace.forecasts`에 들어가며, `include_address=True`와
+VWorld 설정을 넘기면 원 좌표와 가까운 보정 좌표를 확인해 주소를 보강합니다.
+
+```python
+surfing = client.surfing_index(
+    num_of_rows=20,
+    include_address=True,
+    vworld_env_file=".env",
+)
+
+place = surfing.items[0]
+print(place.service_key, place.name, place.parcel_address)
+for forecast in place.forecasts:
+    print(forecast.predicted_on, forecast.total_index, forecast.metrics)
+```
+
+DTO 그룹핑 helper가 제공되는 지수는 `sea_split_index`, `fishing_index`,
+`seasickness_index`, `skin_scuba_index`, `mudflat_index`, `surfing_index`,
+`sea_trip_index`입니다.
+
 ## KHOA 포털 관측소 목록
 
 일부 KHOA 포털 상세 페이지는 data.go.kr ODMI 게이트웨이가 아니라 별도 AJAX

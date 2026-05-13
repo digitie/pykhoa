@@ -10,7 +10,19 @@ from .exceptions import (
     KhoaRequestError,
     KhoaServerError,
 )
-from .models import Observatory, Page, RawRecord, ResponseContext, RomsPrediction
+from .models import (
+    BeachIndexForecast,
+    BeachIndexPlace,
+    BeachSearchObservation,
+    BeachSearchResult,
+    MarineIndexForecast,
+    MarineIndexPlace,
+    Observatory,
+    Page,
+    RawRecord,
+    ResponseContext,
+    RomsPrediction,
+)
 from .observatories import (
     BEACH_INFO_MODIFY_CYCLE,
     BEACH_INFO_TITLE,
@@ -55,6 +67,10 @@ __all__ = [
     "KHOA_OPENAPI_INFO_URL",
     "SERVICE_BY_KEY",
     "SERVICE_DEFINITIONS",
+    "BeachIndexForecast",
+    "BeachIndexPlace",
+    "BeachSearchObservation",
+    "BeachSearchResult",
     "KhoaAuthError",
     "KhoaClient",
     "KhoaError",
@@ -64,6 +80,8 @@ __all__ = [
     "KhoaRateLimitError",
     "KhoaRequestError",
     "KhoaServerError",
+    "MarineIndexForecast",
+    "MarineIndexPlace",
     "Observatory",
     "Page",
     "RawRecord",

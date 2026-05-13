@@ -578,6 +578,7 @@ def enrich_observatory_addresses(
     vworld_env_file: str | PathLike[str] | None = None,
     timeout: float = 10.0,
     search_offsets_degrees: tuple[float, ...] = DEFAULT_ADDRESS_SEARCH_OFFSETS_DEGREES,
+    require_road_address: bool = True,
 ) -> tuple[Observatory, ...]:
     """VWorld 역지오코딩 결과를 관측소 목록에 붙입니다."""
 
@@ -594,6 +595,7 @@ def enrich_observatory_addresses(
                 client,
                 observatory,
                 search_offsets_degrees=search_offsets_degrees,
+                require_road_address=require_road_address,
             )
         )
         for observatory in observatories
@@ -639,6 +641,7 @@ def _lookup_vworld_address_fields(
     observatory: Observatory,
     *,
     search_offsets_degrees: tuple[float, ...],
+    require_road_address: bool,
 ) -> dict[str, Any]:
     merged: dict[str, Any] = {}
     first_match: tuple[PlaceCoordinate, float, str] | None = None
@@ -695,7 +698,7 @@ def _lookup_vworld_address_fields(
                     ),
                 )
                 found_road = True
-            if found_parcel and found_road:
+            if found_parcel and (found_road or not require_road_address):
                 break
 
     if merged and first_match is not None:

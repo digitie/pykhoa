@@ -1,13 +1,33 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import date
+from typing import Any
 
 import pytest
+from kraddr.base import Address
 
-from khoa import KhoaClient, KhoaRequestError, RomsPrediction
+from khoa import (
+    BeachIndexPlace,
+    BeachSearchResult,
+    KhoaClient,
+    KhoaRequestError,
+    MarineIndexPlace,
+    RomsPrediction,
+)
 from khoa.exceptions import KhoaAuthError, KhoaNoDataError
 
 from .conftest import FakeResponse, khoa_payload
+
+
+class FakeVworldClient:
+    def __init__(self, payload: Mapping[str, Any]) -> None:
+        self.payload = payload
+        self.calls: list[dict[str, Any]] = []
+
+    def reverse_geocode_latlon(self, lat: float, lon: float, **kwargs: Any) -> Mapping[str, Any]:
+        self.calls.append({"lat": lat, "lon": lon, "kwargs": dict(kwargs)})
+        return self.payload
 
 
 def test_fetch_builds_request_and_normalizes_items(fake_client_factory):
@@ -78,6 +98,144 @@ def test_roms_typed_helper(fake_client_factory):
     assert item.water_temperature_c == 15.45
 
 
+def test_beach_index_accepts_top_level_header_body_payload(fake_client_factory):
+    row = {
+        "bbchNm": "대천해수욕장",
+        "lat": 36.31,
+        "lot": 126.513,
+        "predcYmd": "2026-05-13",
+        "predcNoonSeCd": "오전",
+    }
+    client, session = fake_client_factory(FakeResponse(_top_level_khoa_payload(row)))
+
+    page = client.beach_index(num_of_rows=1)
+
+    assert session.calls[0]["url"].endswith("/fcstBeachv2/GetFcstBeachApiServicev2")
+    place = page.items[0]
+    assert isinstance(place, BeachIndexPlace)
+    assert place.name == "대천해수욕장"
+    assert place.forecasts[0].forecast_period == "오전"
+    assert page.total_count == 1
+
+
+def test_beach_index_can_include_vworld_address(fake_client_factory):
+    row = {
+        "bbchNm": "해운대해수욕장",
+        "lat": 35.158,
+        "lot": 129.159,
+        "predcYmd": "2026-05-13",
+        "predcNoonSeCd": "오전",
+    }
+    client, _session = fake_client_factory(FakeResponse(_top_level_khoa_payload([row, row])))
+    vworld = FakeVworldClient(_vworld_address_payload())
+
+    page = client.beach_index(include_address=True, vworld_client=vworld, num_of_rows=2)
+
+    first = page.items[0]
+    assert len(page.items) == 1
+    assert first.id == "BCH001"
+    assert first.name == "해운대해수욕장"
+    assert len(first.forecasts) == 2
+    assert isinstance(first.address, Address)
+    assert first.legal_dong_code == "2635010500"
+    assert first.road_address_code == "26350530419929900026400000"
+    assert first.road_name_code == "263504199299"
+    assert first.parcel_address == "부산광역시 해운대구 우동 622-8"
+    assert first.road_address == "부산광역시 해운대구 해운대해변로 264"
+    assert first.detail_address == "해운대해수욕장"
+    assert first.zipcode == "48094"
+    assert first.address_latitude == pytest.approx(35.1585)
+    assert first.address_longitude == pytest.approx(129.1585)
+    assert first.address_match_type == "nearby"
+    assert first.address_source == "vworld"
+    assert len(vworld.calls) == 1
+
+
+def test_beach_search_calls_direct_endpoint_and_returns_dto(fake_client_factory):
+    payload = {
+        "result": {
+            "meta": {
+                "beach_code": "BCH001",
+                "beach_name": "Haeundae Beach",
+                "obs_post_name": "Haeundae Beach",
+            },
+            "data": [
+                {
+                    "tide": None,
+                    "water_temp": "16.2",
+                    "wind_speed": "2.5",
+                    "wind_direct": "SSW",
+                    "obs_time": "2026-05-13 18:40",
+                }
+            ],
+        }
+    }
+    client, session = fake_client_factory(FakeResponse(payload))
+
+    result = client.beach_search("BCH001", service_key="DIRECT_KEY")
+
+    call = session.calls[0]
+    assert call["url"].endswith("/beach/search.do")
+    assert call["params"]["ServiceKey"] == "DIRECT_KEY"
+    assert call["params"]["BeachCode"] == "BCH001"
+    assert isinstance(result, BeachSearchResult)
+    assert result.id == "BCH001"
+    assert result.name == "Haeundae Beach"
+    assert result.lat is not None
+    assert isinstance(result.address, Address)
+    observation = result.observations[0]
+    assert observation.water_temperature_c == 16.2
+    assert observation.wind_speed_m_s == 2.5
+    assert observation.observed_at is not None
+
+
+def test_surfing_index_groups_places_and_enriches_address_once(fake_client_factory):
+    rows = [
+        {
+            "surfPlcNm": "Surf A",
+            "lat": "35.0",
+            "lot": "129.0",
+            "predcYmd": "20260513",
+            "predcNoonSeCd": "AM",
+            "avgWvhgt": "0.4",
+            "totalIndex": "80",
+        },
+        {
+            "surfPlcNm": "Surf A",
+            "lat": "35.0",
+            "lot": "129.0",
+            "predcYmd": "20260513",
+            "predcNoonSeCd": "PM",
+            "avgWvhgt": "0.5",
+            "totalIndex": "82",
+        },
+        {
+            "surfPlcNm": "Surf B",
+            "lat": "36.0",
+            "lot": "128.0",
+            "predcYmd": "20260513",
+            "avgWvhgt": "0.2",
+            "totalIndex": "60",
+        },
+    ]
+    client, session = fake_client_factory(FakeResponse(khoa_payload(rows)))
+    vworld = FakeVworldClient(_vworld_address_payload())
+
+    page = client.surfing_index(include_address=True, vworld_client=vworld, num_of_rows=3)
+
+    assert session.calls[0]["url"].endswith("/fcstSurfingv2/GetFcstSurfingApiServicev2")
+    assert len(page.items) == 2
+    first = page.items[0]
+    assert isinstance(first, MarineIndexPlace)
+    assert first.service_key == "surfing_index"
+    assert first.name == "Surf A"
+    assert len(first.forecasts) == 2
+    assert first.forecasts[0].total_index == 80
+    assert first.forecasts[0].metrics["avgWvhgt"] == "0.4"
+    assert isinstance(first.address, Address)
+    assert len(vworld.calls) == 2
+
+
 def test_iter_pages_stops_after_total_count(fake_client_factory):
     client, session = fake_client_factory(
         FakeResponse(
@@ -132,3 +290,56 @@ def test_constructor_accepts_api_key_parameter():
     client = KhoaClient(api_key="TEST_KEY", retries=0)
 
     assert client.service_key == "TEST_KEY"
+
+
+def _top_level_khoa_payload(
+    item: Any,
+    *,
+    result_code: str = "00",
+    result_msg: str = "NORMAL_SERVICE",
+    page_no: int = 1,
+    num_of_rows: int = 10,
+    total_count: int | None = None,
+) -> dict[str, Any]:
+    inferred_total = len(item) if isinstance(item, list) else 1
+    body: dict[str, Any] = {
+        "pageNo": page_no,
+        "numOfRows": num_of_rows,
+        "totalCount": total_count if total_count is not None else inferred_total,
+    }
+    if item is not None:
+        body["items"] = {"item": item}
+    return {
+        "header": {"resultCode": result_code, "resultMsg": result_msg},
+        "body": body,
+    }
+
+
+def _vworld_address_payload() -> Mapping[str, Any]:
+    return {
+        "response": {
+            "status": "OK",
+            "result": [
+                {
+                    "type": "parcel",
+                    "text": "부산광역시 해운대구 우동 622-8",
+                    "zipcode": "48094",
+                    "structure": {
+                        "level4LC": "2635010500",
+                        "detail": "",
+                    },
+                },
+                {
+                    "type": "road",
+                    "text": "부산광역시 해운대구 해운대해변로 264",
+                    "zipcode": "48094",
+                    "structure": {
+                        "level4LC": "4199299",
+                        "level4AC": "2635053000",
+                        "level5": "264",
+                        "detail": "해운대해수욕장",
+                    },
+                },
+            ],
+        }
+    }

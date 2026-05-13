@@ -5,12 +5,37 @@ from __future__ import annotations
 import os
 from collections.abc import Callable, Iterator, Mapping
 from datetime import UTC, date, datetime
+from os import PathLike
 from typing import Any, TypeVar
 
 from ._convert import csv_or_none, to_int_or_none, to_yyyymmdd, without_none
 from ._http import KhoaHttp, SessionLike
-from .exceptions import KhoaAuthError, KhoaNoDataError, KhoaParseError, KhoaRequestError
-from .models import Page, RawRecord, ResponseContext, RomsPrediction
+from .exceptions import (
+    KhoaAuthError,
+    KhoaNoDataError,
+    KhoaParseError,
+    KhoaRequestError,
+    KhoaServerError,
+)
+from .models import (
+    BeachIndexForecast,
+    BeachIndexPlace,
+    BeachSearchObservation,
+    BeachSearchResult,
+    MarineIndexForecast,
+    MarineIndexPlace,
+    Observatory,
+    Page,
+    RawRecord,
+    ResponseContext,
+    RomsPrediction,
+)
+from .observatories import (
+    BEACH_OBSERVATORIES,
+    DEFAULT_ADDRESS_SEARCH_OFFSETS_DEGREES,
+    VworldReverseGeocoderLike,
+    enrich_observatory_addresses,
+)
 from .services import DEFAULT_BASE_URL, SERVICE_DEFINITIONS, ServiceDefinition, get_service
 
 DEFAULT_ENV_NAMES = (
@@ -19,6 +44,17 @@ DEFAULT_ENV_NAMES = (
     "DATA_GO_KR_SERVICE_KEY",
     "PUBLIC_DATA_SERVICE_KEY",
 )
+KHOA_BEACH_SEARCH_URL = "https://khoa.go.kr/oceandata/api/beach/search.do"
+
+_MARINE_INDEX_NAME_KEYS: dict[str, tuple[str, ...]] = {
+    "sea_split_index": ("splocPstnNm",),
+    "fishing_index": ("seafsPstnNm",),
+    "seasickness_index": ("nvgtNm", "vslNm"),
+    "skin_scuba_index": ("skscExpcnRgnNm",),
+    "mudflat_index": ("mdftExpcnVlgNm",),
+    "surfing_index": ("surfPlcNm",),
+    "sea_trip_index": ("sareaDtlNm",),
+}
 
 T = TypeVar("T")
 
@@ -236,6 +272,164 @@ class KhoaClient:
             context=page.context,
         )
 
+    def beach_index(
+        self,
+        params: Mapping[str, Any] | None = None,
+        *,
+        page_no: int = 1,
+        num_of_rows: int = 10,
+        response_type: str = "json",
+        include: str | tuple[str, ...] | list[str] | None = None,
+        exclude: str | tuple[str, ...] | list[str] | None = None,
+        include_address: bool = False,
+        vworld_client: VworldReverseGeocoderLike | None = None,
+        vworld_api_key: str | None = None,
+        vworld_domain: str | None = None,
+        vworld_env_file: str | PathLike[str] | None = None,
+        address_search_offsets_degrees: tuple[float, ...] = (0.0,),
+        validate_required: bool = True,
+        **kwargs: Any,
+    ) -> Page[BeachIndexPlace]:
+        """해수욕지수 행을 해수욕장별 예보 묶음 DTO로 반환합니다."""
+
+        page = self.fetch(
+            "beach_index",
+            params,
+            page_no=page_no,
+            num_of_rows=num_of_rows,
+            response_type=response_type,
+            include=include,
+            exclude=exclude,
+            validate_required=validate_required,
+            **kwargs,
+        )
+        return _beach_index_place_page(
+            page,
+            include_address=include_address,
+            vworld_client=vworld_client,
+            vworld_api_key=vworld_api_key,
+            vworld_domain=vworld_domain,
+            vworld_env_file=vworld_env_file,
+            search_offsets_degrees=address_search_offsets_degrees,
+        )
+
+    def beach_search(
+        self,
+        beach_code: str,
+        *,
+        service_key: str | None = None,
+        include_address: bool = True,
+    ) -> BeachSearchResult:
+        """KHOA `beach/search.do`에서 해수욕장 최신 관측 정보를 가져옵니다."""
+
+        key = service_key or self.service_key
+        params = {"ServiceKey": key, "BeachCode": beach_code}
+        response = self._http.session.get(
+            KHOA_BEACH_SEARCH_URL,
+            params=params,
+            timeout=self.timeout,
+        )
+        _raise_direct_status(
+            response.status_code,
+            response.text,
+            endpoint="beach/search.do",
+            key=key,
+        )
+        try:
+            payload = response.json()
+        except ValueError as exc:
+            raise KhoaParseError(
+                "KHOA beach search response was not valid JSON",
+                endpoint="beach/search.do",
+                failure_kind="parse",
+            ) from exc
+        if not isinstance(payload, Mapping):
+            raise KhoaParseError(
+                "KHOA beach search JSON root was not an object",
+                endpoint="beach/search.do",
+                failure_kind="parse",
+            )
+        return _beach_search_result(payload, include_address=include_address)
+
+    def sea_split_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
+        """바다갈라짐 체험지수를 장소별 DTO로 반환합니다."""
+
+        return self._marine_index("sea_split_index", **kwargs)
+
+    def fishing_index(self, *, gubun: str, **kwargs: Any) -> Page[MarineIndexPlace]:
+        """바다낚시지수를 장소별 DTO로 반환합니다."""
+
+        return self._marine_index("fishing_index", gubun=gubun, **kwargs)
+
+    def seasickness_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
+        """뱃멀미지수를 항로/선박별 DTO로 반환합니다."""
+
+        return self._marine_index("seasickness_index", **kwargs)
+
+    def skin_scuba_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
+        """스킨스쿠버지수를 장소별 DTO로 반환합니다."""
+
+        return self._marine_index("skin_scuba_index", **kwargs)
+
+    def mudflat_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
+        """갯벌체험지수를 장소별 DTO로 반환합니다."""
+
+        return self._marine_index("mudflat_index", **kwargs)
+
+    def surfing_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
+        """서핑지수를 장소별 DTO로 반환합니다."""
+
+        return self._marine_index("surfing_index", **kwargs)
+
+    def sea_trip_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
+        """바다여행지수를 장소별 DTO로 반환합니다."""
+
+        return self._marine_index("sea_trip_index", **kwargs)
+
+    def _marine_index(
+        self,
+        service: str,
+        params: Mapping[str, Any] | None = None,
+        *,
+        page_no: int = 1,
+        num_of_rows: int = 10,
+        response_type: str = "json",
+        include: str | tuple[str, ...] | list[str] | None = None,
+        exclude: str | tuple[str, ...] | list[str] | None = None,
+        include_address: bool = False,
+        vworld_client: VworldReverseGeocoderLike | None = None,
+        vworld_api_key: str | None = None,
+        vworld_domain: str | None = None,
+        vworld_env_file: str | PathLike[str] | None = None,
+        address_search_offsets_degrees: tuple[
+            float, ...
+        ] = DEFAULT_ADDRESS_SEARCH_OFFSETS_DEGREES,
+        validate_required: bool = True,
+        **kwargs: Any,
+    ) -> Page[MarineIndexPlace]:
+        page = self.fetch(
+            service,
+            params,
+            page_no=page_no,
+            num_of_rows=num_of_rows,
+            response_type=response_type,
+            include=include,
+            exclude=exclude,
+            validate_required=validate_required,
+            **kwargs,
+        )
+        return _marine_index_place_page(
+            page,
+            service_key=service,
+            name_keys=_MARINE_INDEX_NAME_KEYS[service],
+            include_address=include_address,
+            vworld_client=vworld_client,
+            vworld_api_key=vworld_api_key,
+            vworld_domain=vworld_domain,
+            vworld_env_file=vworld_env_file,
+            search_offsets_degrees=address_search_offsets_degrees,
+        )
+
     def first(
         self,
         service: str | ServiceDefinition,
@@ -356,28 +550,33 @@ def _extract_body(payload: Mapping[str, Any], service: ServiceDefinition) -> Map
     if "OpenAPI_ServiceResponse" in payload:
         _raise_for_openapi_service_response(payload["OpenAPI_ServiceResponse"], service)
 
-    try:
-        response = payload["response"]
-        header = response["header"]
-    except (KeyError, TypeError) as exc:
+    response = payload.get("response")
+    if isinstance(response, Mapping):
+        header = response.get("header")
+        body = response.get("body", {})
+    else:
+        header = payload.get("header")
+        body = payload.get("body", {})
+
+    if header is None:
         raise KhoaParseError(
             "KHOA response did not contain response.header",
             endpoint=service.endpoint,
             service=service.key,
             failure_kind="parse",
-        ) from exc
+        )
 
     if not isinstance(response, Mapping) or not isinstance(header, Mapping):
-        raise KhoaParseError(
-            "KHOA response/header was not an object",
-            endpoint=service.endpoint,
-            service=service.key,
-            failure_kind="parse",
-        )
+        if response is not None or not isinstance(header, Mapping):
+            raise KhoaParseError(
+                "KHOA response/header was not an object",
+                endpoint=service.endpoint,
+                service=service.key,
+                failure_kind="parse",
+            )
 
     code = str(header.get("resultCode", "")).strip()
     message = str(header.get("resultMsg", "")).strip()
-    body = response.get("body", {})
     if code in {"0", "00", "0000", "NORMAL_CODE", ""}:
         if not isinstance(body, Mapping):
             raise KhoaParseError(
@@ -478,3 +677,546 @@ def _raise_for_result_code(code: str, message: str, service: ServiceDefinition) 
         result_code=code or None,
         failure_kind="request",
     )
+
+
+def _beach_index_place_page(
+    page: Page[RawRecord],
+    *,
+    include_address: bool,
+    vworld_client: VworldReverseGeocoderLike | None,
+    vworld_api_key: str | None,
+    vworld_domain: str | None,
+    vworld_env_file: str | PathLike[str] | None,
+    search_offsets_degrees: tuple[float, ...],
+) -> Page[BeachIndexPlace]:
+    groups: dict[tuple[str, str, float, float], list[RawRecord]] = {}
+    observatories: dict[tuple[str, str, float, float], Observatory] = {}
+    for row in page.items:
+        observatory = _beach_index_observatory(row)
+        if observatory is None:
+            continue
+        key = _beach_index_place_key(observatory)
+        groups.setdefault(key, []).append(row)
+        observatories.setdefault(key, observatory)
+
+    if include_address and observatories:
+        observatories = _beach_index_address_observatories(
+            observatories,
+            vworld_client=vworld_client,
+            vworld_api_key=vworld_api_key,
+            vworld_domain=vworld_domain,
+            vworld_env_file=vworld_env_file,
+            search_offsets_degrees=search_offsets_degrees,
+        )
+
+    items = tuple(
+        _beach_index_place_from_rows(observatories[key], rows)
+        for key, rows in groups.items()
+    )
+
+    return Page[BeachIndexPlace](
+        items=items,
+        total_count=page.total_count,
+        page_no=page.page_no,
+        num_of_rows=page.num_of_rows,
+        raw=page.raw,
+        context=page.context,
+    )
+
+
+def _beach_index_observatory(row: Mapping[str, Any]) -> Observatory | None:
+    name = _row_text(row, "bbchNm", "beachName", "placeName")
+    latitude = _row_float(row, "lat", "latitude")
+    longitude = _row_float(row, "lot", "lon", "longitude")
+    if name is None or latitude is None or longitude is None:
+        return None
+
+    matched = _find_beach_observatory(name, latitude, longitude)
+    beach_code = _row_text(row, "placeCode", "beachCode", "obsvtrId")
+    return Observatory.from_raw(
+        {
+            **dict(row),
+            "id": beach_code or (matched.id if matched is not None else name),
+            "name": name,
+            "data_type": "BEACH",
+            "lat": latitude,
+            "lon": longitude,
+        }
+    )
+
+
+def _beach_index_place_key(observatory: Observatory) -> tuple[str, str, float, float]:
+    return (
+        observatory.id,
+        observatory.name,
+        round(observatory.lat, 6),
+        round(observatory.lon, 6),
+    )
+
+
+def _beach_index_address_observatories(
+    observatories: dict[tuple[str, str, float, float], Observatory],
+    *,
+    vworld_client: VworldReverseGeocoderLike | None,
+    vworld_api_key: str | None,
+    vworld_domain: str | None,
+    vworld_env_file: str | PathLike[str] | None,
+    search_offsets_degrees: tuple[float, ...],
+) -> dict[tuple[str, str, float, float], Observatory]:
+    if not _has_live_vworld_options(
+        vworld_client=vworld_client,
+        vworld_api_key=vworld_api_key,
+        vworld_domain=vworld_domain,
+        vworld_env_file=vworld_env_file,
+    ):
+        return {
+            key: _cached_beach_index_address_observatory(observatory)
+            for key, observatory in observatories.items()
+        }
+
+    lookup_observatories = tuple(
+        _beach_index_lookup_observatory(observatory)
+        for observatory in observatories.values()
+    )
+    enriched_values = enrich_observatory_addresses(
+        lookup_observatories,
+        vworld_client=vworld_client,
+        vworld_api_key=vworld_api_key,
+        vworld_domain=vworld_domain,
+        vworld_env_file=vworld_env_file,
+        search_offsets_degrees=search_offsets_degrees,
+    )
+    return {
+        key: _merge_beach_index_address(original, enriched)
+        for (key, original), enriched in zip(
+            observatories.items(),
+            enriched_values,
+            strict=True,
+        )
+    }
+
+
+def _has_live_vworld_options(
+    *,
+    vworld_client: VworldReverseGeocoderLike | None,
+    vworld_api_key: str | None,
+    vworld_domain: str | None,
+    vworld_env_file: str | PathLike[str] | None,
+) -> bool:
+    return any(
+        value is not None
+        for value in (vworld_client, vworld_api_key, vworld_domain, vworld_env_file)
+    )
+
+
+def _cached_beach_index_address_observatory(observatory: Observatory) -> Observatory:
+    cached = _find_beach_observatory(observatory.name, observatory.lat, observatory.lon)
+    if cached is None:
+        return observatory
+    return _merge_beach_index_address(observatory, cached)
+
+
+def _beach_index_lookup_observatory(observatory: Observatory) -> Observatory:
+    cached = _find_beach_observatory(observatory.name, observatory.lat, observatory.lon)
+    lookup_coordinate = (
+        cached.address_coordinate
+        if cached is not None and cached.address_coordinate is not None
+        else observatory.coordinate
+    )
+    return observatory.model_copy(
+        update={
+            "coordinate": lookup_coordinate,
+            "address": None,
+            "address_coordinate": None,
+            "address_distance_m": None,
+            "address_match_type": None,
+            "address_source": None,
+        }
+    )
+
+
+def _merge_beach_index_address(
+    original: Observatory,
+    enriched: Observatory,
+) -> Observatory:
+    address_coordinate = enriched.address_coordinate
+    distance = (
+        original.coordinate.distance_to_m(address_coordinate)
+        if address_coordinate is not None
+        else None
+    )
+    match_type = (
+        "exact"
+        if distance == 0
+        else "nearby"
+        if distance is not None
+        else enriched.address_match_type
+    )
+    return original.model_copy(
+        update={
+            "address": enriched.address,
+            "address_coordinate": address_coordinate,
+            "address_distance_m": round(distance, 3) if distance is not None else None,
+            "address_match_type": match_type,
+            "address_source": enriched.address_source,
+        }
+    )
+
+
+def _beach_index_place_from_rows(
+    observatory: Observatory,
+    rows: list[RawRecord],
+) -> BeachIndexPlace:
+    return BeachIndexPlace(
+        id=observatory.id,
+        name=observatory.name,
+        coordinate=observatory.coordinate,
+        forecasts=tuple(BeachIndexForecast.from_raw(row) for row in rows),
+        address=observatory.address,
+        address_coordinate=observatory.address_coordinate,
+        address_distance_m=observatory.address_distance_m,
+        address_match_type=observatory.address_match_type,
+        address_source=observatory.address_source,
+        raw={"rows": [dict(row) for row in rows]},
+    )
+
+
+def _raise_direct_status(status_code: int, text: str, *, endpoint: str, key: str) -> None:
+    if status_code < 400:
+        return
+
+    message = _redact_secret(text.strip() or f"KHOA direct endpoint returned {status_code}", key)
+    if status_code in {401, 403}:
+        raise KhoaAuthError(
+            message,
+            provider="khoa.go.kr",
+            endpoint=endpoint,
+            status_code=status_code,
+            failure_kind="auth",
+        )
+    if status_code == 429:
+        from .exceptions import KhoaRateLimitError
+
+        raise KhoaRateLimitError(
+            message,
+            provider="khoa.go.kr",
+            endpoint=endpoint,
+            status_code=status_code,
+            failure_kind="rate_limit",
+        )
+    if status_code >= 500:
+        raise KhoaServerError(
+            message,
+            provider="khoa.go.kr",
+            endpoint=endpoint,
+            status_code=status_code,
+            failure_kind="server",
+            retryable=True,
+        )
+    raise KhoaRequestError(
+        message,
+        provider="khoa.go.kr",
+        endpoint=endpoint,
+        status_code=status_code,
+        failure_kind="request",
+    )
+
+
+def _redact_secret(text: str, key: str) -> str:
+    return text.replace(key, "[redacted]") if key else text
+
+
+def _beach_search_result(
+    payload: Mapping[str, Any],
+    *,
+    include_address: bool,
+) -> BeachSearchResult:
+    result = payload.get("result")
+    if not isinstance(result, Mapping):
+        raise KhoaParseError(
+            "KHOA beach search response did not contain result object",
+            provider="khoa.go.kr",
+            endpoint="beach/search.do",
+            failure_kind="parse",
+        )
+
+    error = _row_text(result, "error")
+    if error is not None:
+        _raise_direct_payload_error(error, endpoint="beach/search.do")
+
+    meta_value = result.get("meta")
+    meta: Mapping[str, Any] = meta_value if isinstance(meta_value, Mapping) else {}
+    rows = _direct_mapping_rows(result.get("data"), endpoint="beach/search.do")
+
+    beach_code = _row_text(meta, "beach_code", "beachCode", "BeachCode")
+    obs_post_name = _row_text(meta, "obs_post_name", "obsPostName")
+    beach_name = _row_text(meta, "beach_name", "beachName") or obs_post_name
+    if beach_code is None:
+        raise KhoaParseError(
+            "KHOA beach search response did not contain meta.beach_code",
+            provider="khoa.go.kr",
+            endpoint="beach/search.do",
+            failure_kind="parse",
+        )
+
+    observatory = _find_beach_observatory_by_id_or_name(beach_code, beach_name)
+    address = observatory.address if include_address and observatory is not None else None
+    address_coordinate = (
+        observatory.address_coordinate if include_address and observatory is not None else None
+    )
+    return BeachSearchResult(
+        id=beach_code,
+        name=beach_name or beach_code,
+        obs_post_name=obs_post_name,
+        coordinate=observatory.coordinate if observatory is not None else None,
+        observations=tuple(BeachSearchObservation.from_raw(row) for row in rows),
+        address=address,
+        address_coordinate=address_coordinate,
+        address_distance_m=observatory.address_distance_m
+        if include_address and observatory is not None
+        else None,
+        address_match_type=observatory.address_match_type
+        if include_address and observatory is not None
+        else None,
+        address_source=observatory.address_source
+        if include_address and observatory is not None
+        else None,
+        raw=dict(payload),
+    )
+
+
+def _raise_direct_payload_error(message: str, *, endpoint: str) -> None:
+    normalized = message.replace("_", "").replace(" ", "").lower()
+    if "servicekey" in normalized or "auth" in normalized:
+        raise KhoaAuthError(
+            message,
+            provider="khoa.go.kr",
+            endpoint=endpoint,
+            failure_kind="auth",
+        )
+    raise KhoaRequestError(
+        message,
+        provider="khoa.go.kr",
+        endpoint=endpoint,
+        failure_kind="request",
+    )
+
+
+def _direct_mapping_rows(value: Any, *, endpoint: str) -> tuple[Mapping[str, Any], ...]:
+    if value in (None, "", []):
+        return ()
+    if isinstance(value, Mapping):
+        return (value,)
+    if isinstance(value, list) and all(isinstance(row, Mapping) for row in value):
+        return tuple(value)
+    raise KhoaParseError(
+        "KHOA direct response data was not an object or list",
+        provider="khoa.go.kr",
+        endpoint=endpoint,
+        failure_kind="parse",
+    )
+
+
+def _marine_index_place_page(
+    page: Page[RawRecord],
+    *,
+    service_key: str,
+    name_keys: tuple[str, ...],
+    include_address: bool,
+    vworld_client: VworldReverseGeocoderLike | None,
+    vworld_api_key: str | None,
+    vworld_domain: str | None,
+    vworld_env_file: str | PathLike[str] | None,
+    search_offsets_degrees: tuple[float, ...],
+) -> Page[MarineIndexPlace]:
+    groups: dict[tuple[str, str, str, float, float], list[RawRecord]] = {}
+    observatories: dict[tuple[str, str, str, float, float], Observatory] = {}
+
+    for row in page.items:
+        observatory = _marine_index_observatory(row, service_key, name_keys=name_keys)
+        if observatory is None:
+            continue
+        key = _marine_index_place_key(service_key, observatory)
+        groups.setdefault(key, []).append(row)
+        observatories.setdefault(key, observatory)
+
+    if include_address and observatories:
+        enriched_values = enrich_observatory_addresses(
+            tuple(observatories.values()),
+            vworld_client=vworld_client,
+            vworld_api_key=vworld_api_key,
+            vworld_domain=vworld_domain,
+            vworld_env_file=vworld_env_file,
+            search_offsets_degrees=search_offsets_degrees,
+            require_road_address=False,
+        )
+        observatories = {
+            key: _merge_marine_index_address(original, enriched)
+            for (key, original), enriched in zip(
+                observatories.items(),
+                enriched_values,
+                strict=True,
+            )
+        }
+
+    items = tuple(
+        _marine_index_place_from_rows(
+            service_key,
+            name_keys,
+            observatories[key],
+            rows,
+        )
+        for key, rows in groups.items()
+    )
+
+    return Page[MarineIndexPlace](
+        items=items,
+        total_count=page.total_count,
+        page_no=page.page_no,
+        num_of_rows=page.num_of_rows,
+        raw=page.raw,
+        context=page.context,
+    )
+
+
+def _marine_index_observatory(
+    row: Mapping[str, Any],
+    service_key: str,
+    *,
+    name_keys: tuple[str, ...],
+) -> Observatory | None:
+    name = _row_text(row, *name_keys)
+    latitude = _row_float(row, "lat", "latitude")
+    longitude = _row_float(row, "lot", "lon", "longitude")
+    if name is None or latitude is None or longitude is None:
+        return None
+
+    place_id = _row_text(
+        row,
+        "placeCode",
+        "place_code",
+        "nvgtCode",
+        "vnpCode",
+        "obsCode",
+        "predcMdlId",
+    )
+    place_id = place_id or f"{service_key}:{name}:{latitude:.6f}:{longitude:.6f}"
+    return Observatory.from_raw(
+        {
+            **dict(row),
+            "id": place_id,
+            "name": name,
+            "data_type": service_key,
+            "lat": latitude,
+            "lon": longitude,
+        }
+    )
+
+
+def _marine_index_place_key(
+    service_key: str,
+    observatory: Observatory,
+) -> tuple[str, str, str, float, float]:
+    return (
+        service_key,
+        observatory.id,
+        observatory.name,
+        round(observatory.lat, 6),
+        round(observatory.lon, 6),
+    )
+
+
+def _merge_marine_index_address(original: Observatory, enriched: Observatory) -> Observatory:
+    address_coordinate = enriched.address_coordinate
+    distance = (
+        original.coordinate.distance_to_m(address_coordinate)
+        if address_coordinate is not None
+        else None
+    )
+    return original.model_copy(
+        update={
+            "address": enriched.address,
+            "address_coordinate": address_coordinate,
+            "address_distance_m": round(distance, 3) if distance is not None else None,
+            "address_match_type": enriched.address_match_type,
+            "address_source": enriched.address_source,
+        }
+    )
+
+
+def _marine_index_place_from_rows(
+    service_key: str,
+    name_keys: tuple[str, ...],
+    observatory: Observatory,
+    rows: list[RawRecord],
+) -> MarineIndexPlace:
+    return MarineIndexPlace(
+        service_key=service_key,
+        id=observatory.id,
+        name=observatory.name,
+        coordinate=observatory.coordinate,
+        forecasts=tuple(
+            MarineIndexForecast.from_raw(row, excluded_keys=name_keys)
+            for row in rows
+        ),
+        address=observatory.address,
+        address_coordinate=observatory.address_coordinate,
+        address_distance_m=observatory.address_distance_m,
+        address_match_type=observatory.address_match_type,
+        address_source=observatory.address_source,
+        raw={"rows": [dict(row) for row in rows]},
+    )
+
+
+def _find_beach_observatory_by_id_or_name(
+    beach_code: str,
+    name: str | None,
+) -> Observatory | None:
+    for observatory in BEACH_OBSERVATORIES:
+        if observatory.id == beach_code:
+            return observatory
+
+    if name is None:
+        return None
+    same_name = [observatory for observatory in BEACH_OBSERVATORIES if observatory.name == name]
+    if len(same_name) == 1:
+        return same_name[0]
+    return None
+
+
+def _find_beach_observatory(name: str, latitude: float, longitude: float) -> Observatory | None:
+    for observatory in BEACH_OBSERVATORIES:
+        if (
+            observatory.name == name
+            and abs(observatory.lat - latitude) < 0.0005
+            and abs(observatory.lon - longitude) < 0.0005
+        ):
+            return observatory
+
+    same_name = [observatory for observatory in BEACH_OBSERVATORIES if observatory.name == name]
+    if len(same_name) == 1:
+        return same_name[0]
+    return None
+
+
+def _row_text(row: Mapping[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        value = row.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return None
+
+
+def _row_float(row: Mapping[str, Any], *keys: str) -> float | None:
+    for key in keys:
+        value = row.get(key)
+        if value is None:
+            continue
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            continue
+    return None

@@ -55,6 +55,47 @@ KHOA 페이지에서 실제 확인되는 국가중점 ODMI 상세 페이지는 4
 | `ship_index` | `SV_AP_04_012` | `15156036` | 선박운항지수 | `category` |
 | `ocean_condition` | `SV_AP_04_013` | `15156040` | 해황예보도 | `areaCode` |
 
+`beach_index`는 data.go.kr 응답이 `response.header/body` 래퍼 없이
+최상위 `header/body`로 오는 경우가 있어 클라이언트가 두 구조를 모두
+받아들입니다. `KhoaClient.beach_index()`는 원문 예보 행을 해수욕장별
+`BeachIndexPlace` DTO로 묶어 반환하고, 각 장소의 `forecasts`에
+`BeachIndexForecast` 예보 슬롯을 담습니다.
+
+`KhoaClient.beach_index(include_address=True, ...)`를 사용하면 장소별
+`bbchNm`, `lat`, `lot` 좌표를 VWorld 역지오코딩으로 한 번만 보강해 아래
+필드를 DTO 속성으로 제공합니다.
+
+- `id`: 내장 해수욕장 관측소 목록과 이름/좌표가 일치할 때의 `BCH...` 코드
+- `name`, `coordinate`
+- `forecasts`: `predcYmd`, `predcNoonSeCd`, `maxWvhgt`, `avgWtem`,
+  `avgArtmp`, `maxWspd`, `opnStat`, `totalIndex`를 변환한 예보 묶음
+- `address`: `kraddr.base.Address` 타입의 주소
+- `legal_dong_code`, `road_address_code`, `road_name_code`
+- `parcel_address`, `road_address`, `detail_address`, `zipcode`
+- `address_latitude`, `address_longitude`, `address_distance_m`
+- `address_match_type`, `address_source`
+
+`https://khoa.go.kr/oceandata/api/beach/search.do`는 data.go.kr ODMI 목록에는
+들어 있지 않은 KHOA 직접 endpoint입니다. `KhoaClient.beach_search(beach_code, ...)`로
+호출하며, 응답의 `result.meta`와 `result.data`를 `BeachSearchResult`와
+`BeachSearchObservation` DTO로 변환합니다. KHOA 직접 `ServiceKey`가 필요한 경우
+`service_key=`에 별도로 넘깁니다.
+
+해수욕지수 외의 레저 지수 중 좌표와 장소명이 함께 내려오는 다음 서비스는
+`MarineIndexPlace`/`MarineIndexForecast` DTO로 묶어 반환합니다.
+
+- `sea_split_index`
+- `fishing_index`
+- `seasickness_index`
+- `skin_scuba_index`
+- `mudflat_index`
+- `surfing_index`
+- `sea_trip_index`
+
+각 DTO는 `service_key`, `id`, `name`, `coordinate`, `forecasts`, `metrics`,
+주소 보강 필드를 제공합니다. `include_address=True`를 쓰면 원 좌표와 가까운
+보정 좌표를 VWorld 역지오코딩으로 확인해 주소를 보강합니다.
+
 ## 비표준 포털 관측소 엔드포인트
 
 KHOA 포털 상세 페이지는 관측소 목록을 아래 AJAX 엔드포인트로 제공합니다.
