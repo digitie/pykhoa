@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
-import os
 from collections.abc import Callable, Iterator, Mapping
 from datetime import UTC, date, datetime
 from os import PathLike
 from typing import Any, TypeVar
 
-from ._convert import csv_or_none, to_int_or_none, to_yyyymmdd, without_none
+from ._convert import (
+    csv_or_none,
+    normalize_service_key,
+    to_int_or_none,
+    to_yyyymmdd,
+    without_none,
+)
 from ._http import KhoaHttp, SessionLike
+from .debug import DebugRun, debug_error
 from .exceptions import (
     KhoaAuthError,
     KhoaNoDataError,
@@ -17,6 +23,7 @@ from .exceptions import (
     KhoaRequestError,
     KhoaServerError,
 )
+from .keys import DATA_GO_KR_ENV_NAMES, get_service_key
 from .models import (
     BeachIndexForecast,
     BeachIndexPlace,
@@ -36,14 +43,16 @@ from .observatories import (
     VworldReverseGeocoderLike,
     enrich_observatory_addresses,
 )
-from .services import DEFAULT_BASE_URL, SERVICE_DEFINITIONS, ServiceDefinition, get_service
-
-DEFAULT_ENV_NAMES = (
-    "KHOA_SERVICE_KEY",
-    "KHOA_API_KEY",
-    "DATA_GO_KR_SERVICE_KEY",
-    "PUBLIC_DATA_SERVICE_KEY",
+from .services import (
+    DEFAULT_BASE_URL,
+    SERVICE_DEFINITIONS,
+    ServiceDefinition,
+    get_api_catalog,
+    get_api_catalog_entry,
+    get_service,
 )
+
+DEFAULT_ENV_NAMES = DATA_GO_KR_ENV_NAMES
 KHOA_BEACH_SEARCH_URL = "https://khoa.go.kr/oceandata/api/beach/search.do"
 
 _MARINE_INDEX_NAME_KEYS: dict[str, tuple[str, ...]] = {
@@ -95,13 +104,25 @@ class KhoaClient:
         api_key: str | None = None,
         base_url: str = DEFAULT_BASE_URL,
         service_key_param: str = "serviceKey",
+        key_source: str = "data.go.kr",
+        env_file: str | PathLike[str] | None = ".env",
         timeout: float = 10.0,
         retries: int = 3,
         session: SessionLike | None = None,
     ) -> None:
-        if service_key and api_key and service_key != api_key:
+        normalized_service_key = normalize_service_key(service_key)
+        normalized_api_key = normalize_service_key(api_key)
+        if (
+            normalized_service_key
+            and normalized_api_key
+            and normalized_service_key != normalized_api_key
+        ):
             raise ValueError("service_key and api_key were both provided with different values")
-        key = api_key or service_key or _first_env(DEFAULT_ENV_NAMES)
+        key = (
+            normalized_api_key
+            or normalized_service_key
+            or get_service_key(key_source, env_file=env_file)
+        )
         if not key:
             raise KhoaAuthError(
                 "api_key is required. Pass api_key=... or set KHOA_SERVICE_KEY.",
@@ -125,11 +146,17 @@ class KhoaClient:
         name: str = "KHOA_SERVICE_KEY",
         *,
         fallback_names: tuple[str, ...] = DEFAULT_ENV_NAMES[1:],
+        env_file: str | PathLike[str] | None = ".env",
+        key_source: str = "data.go.kr",
         **kwargs: Any,
     ) -> KhoaClient:
         """환경변수에서 인증키를 읽어 클라이언트를 만듭니다."""
 
-        service_key = os.getenv(name) or _first_env(fallback_names)
+        service_key = get_service_key(
+            key_source,
+            env_file=env_file,
+            names=(name, *fallback_names),
+        )
         if not service_key:
             names = ", ".join((name, *fallback_names))
             raise KhoaAuthError(f"none of these environment variables are set: {names}")
@@ -140,6 +167,11 @@ class KhoaClient:
         """번들 KHOA ODMI 서비스 카탈로그를 반환합니다."""
 
         return SERVICE_DEFINITIONS
+
+    def api_catalog(self) -> tuple[dict[str, Any], ...]:
+        """UI 표시에 적합한 API 카탈로그 dict 목록을 반환합니다."""
+
+        return get_api_catalog()
 
     def service(self, key: str | ServiceDefinition) -> ServiceDefinition:
         """key, API ID, operation, 한글 제목으로 서비스 정의 하나를 반환합니다."""
@@ -200,6 +232,63 @@ class KhoaClient:
         """서비스를 호출하고 응답 item만 반환합니다."""
 
         return self.fetch(service, **kwargs).items
+
+    def debug_fetch(
+        self,
+        service: str | ServiceDefinition,
+        params: Mapping[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> DebugRun:
+        """디버그 UI/fixture 생성을 위한 fetch 실행 정보를 반환합니다."""
+
+        definition = get_service(service)
+        input_data = {"service": definition.key, "params": dict(params or {}), "options": kwargs}
+        catalog_entry = get_api_catalog_entry(definition)
+        trace = [
+            f"서비스 정의 확인: {definition.key}",
+            f"데이터셋명: {catalog_entry['dataset_name']}",
+            f"endpoint: {catalog_entry['endpoint']}",
+            f"서비스키 신청 링크: {catalog_entry['service_key_url']}",
+        ]
+        try:
+            page = self.fetch(definition, params, **kwargs)
+        except Exception as exc:
+            trace.append(f"실행 실패: {exc.__class__.__name__}")
+            return DebugRun(
+                function="fetch",
+                input=input_data,
+                request={},
+                response={},
+                parsed=None,
+                processed=None,
+                trace=trace,
+                error=debug_error(exc),
+                catalog=catalog_entry,
+            )
+
+        context = page.context
+        request = {
+            "method": "GET",
+            "url": context.request_url if context is not None else definition.endpoint,
+            "query": context.request_params if context is not None else {},
+            "headers": {"Accept": "application/json"},
+        }
+        response = {
+            "status_code": 200,
+            "headers": {},
+            "body": page.raw,
+        }
+        trace.append(f"응답 item {len(page.items)}건 정규화")
+        return DebugRun(
+            function="fetch",
+            input=input_data,
+            request=request,
+            response=response,
+            parsed=page,
+            processed=tuple(page.items),
+            trace=trace,
+            catalog=catalog_entry,
+        )
 
     def iter_pages(
         self,
@@ -318,11 +407,15 @@ class KhoaClient:
         beach_code: str,
         *,
         service_key: str | None = None,
+        env_file: str | PathLike[str] | None = ".env",
         include_address: bool = True,
     ) -> BeachSearchResult:
         """KHOA `beach/search.do`에서 해수욕장 최신 관측 정보를 가져옵니다."""
 
-        key = service_key or self.service_key
+        key = normalize_service_key(service_key) or get_service_key(
+            "khoa.go.kr",
+            env_file=env_file,
+        ) or self.service_key
         params = {"ServiceKey": key, "BeachCode": beach_code}
         response = self._http.session.get(
             KHOA_BEACH_SEARCH_URL,
@@ -498,14 +591,6 @@ class KhoaClient:
 
 
 KhoaODMIClient = KhoaClient
-
-
-def _first_env(names: tuple[str, ...]) -> str | None:
-    for name in names:
-        value = os.getenv(name)
-        if value:
-            return value
-    return None
 
 
 def _normalize_param_names(params: Mapping[str, Any]) -> dict[str, Any]:

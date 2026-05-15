@@ -1,6 +1,17 @@
 """KHOA ODMI OpenAPI 서비스를 위한 Python 헬퍼."""
 
+from ._convert import normalize_service_key
 from .client import KhoaClient, KhoaODMIClient
+from .debug import (
+    DEFAULT_ASSERTION,
+    SENSITIVE_KEYS,
+    DebugRun,
+    debug_error,
+    jsonable,
+    redact_sensitive,
+    save_fixture,
+    slugify_case_name,
+)
 from .exceptions import (
     KhoaAuthError,
     KhoaError,
@@ -9,6 +20,14 @@ from .exceptions import (
     KhoaRateLimitError,
     KhoaRequestError,
     KhoaServerError,
+)
+from .keys import (
+    DATA_GO_KR_ENV_NAMES,
+    KHOA_GO_KR_ENV_NAMES,
+    SERVICE_KEY_ENV_NAMES_BY_SOURCE,
+    VWORLD_ENV_NAMES,
+    get_service_key,
+    load_env_file,
 )
 from .models import (
     BeachIndexForecast,
@@ -48,11 +67,15 @@ from .services import (
     SERVICE_BY_KEY,
     SERVICE_DEFINITIONS,
     ServiceDefinition,
+    get_api_catalog,
+    get_api_catalog_entry,
     get_service,
 )
 
 __all__ = [
     "DEFAULT_BASE_URL",
+    "DEFAULT_ASSERTION",
+    "DATA_GO_KR_ENV_NAMES",
     "BEACH_INFO_MODIFY_CYCLE",
     "BEACH_INFO_TITLE",
     "BEACH_INFO_UPDATE_INTERVAL_MINUTES",
@@ -65,12 +88,15 @@ __all__ = [
     "KHOA_ODMI_LIST_URL",
     "KHOA_OPENAPI_DETAIL_URL",
     "KHOA_OPENAPI_INFO_URL",
+    "KHOA_GO_KR_ENV_NAMES",
     "SERVICE_BY_KEY",
     "SERVICE_DEFINITIONS",
+    "SERVICE_KEY_ENV_NAMES_BY_SOURCE",
     "BeachIndexForecast",
     "BeachIndexPlace",
     "BeachSearchObservation",
     "BeachSearchResult",
+    "DebugRun",
     "KhoaAuthError",
     "KhoaClient",
     "KhoaError",
@@ -87,12 +113,24 @@ __all__ = [
     "RawRecord",
     "ResponseContext",
     "RomsPrediction",
+    "SENSITIVE_KEYS",
     "ServiceDefinition",
+    "VWORLD_ENV_NAMES",
+    "debug_error",
     "enrich_observatory_addresses",
     "fetch_beach_observatories",
     "fetch_observatory_list",
     "fetch_openapi_info",
     "get_beach_observatories",
     "get_builtin_observatory_list",
+    "get_api_catalog",
+    "get_api_catalog_entry",
+    "get_service_key",
     "get_service",
+    "jsonable",
+    "load_env_file",
+    "normalize_service_key",
+    "redact_sensitive",
+    "save_fixture",
+    "slugify_case_name",
 ]

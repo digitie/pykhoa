@@ -1,0 +1,82 @@
+{
+  "name": "roms_basic",
+  "function": "roms",
+  "description": "ROMS 응답 한 건을 replay 방식으로 파싱하고 가공하는 기본 fixture",
+  "input": {
+    "ymin": 34.0,
+    "ymax": 34.1,
+    "xmin": 123.2,
+    "xmax": 123.3
+  },
+  "request": {
+    "method": "GET",
+    "url": "https://apis.data.go.kr/1192000/service/OceansData/roms/GetRomsApiService",
+    "query": {
+      "ymin": 34.0,
+      "ymax": 34.1,
+      "xmin": 123.2,
+      "xmax": 123.3,
+      "pageNo": 1,
+      "numOfRows": 1,
+      "type": "json"
+    },
+    "headers": {
+      "Accept": "application/json"
+    }
+  },
+  "response": {
+    "status_code": 200,
+    "headers": {
+      "content-type": "application/json"
+    },
+    "body": {
+      "pageNo": 1,
+      "numOfRows": 1,
+      "totalCount": 1,
+      "items": {
+        "item": [
+          {
+            "predcDt": "2024-11-01 00:00:00",
+            "lat": "39.19335",
+            "lot": "118.02332",
+            "crdir": "99.71",
+            "crsp": "0.07",
+            "wtem": "15.45"
+          }
+        ]
+      }
+    }
+  },
+  "parsed": {},
+  "processed": {
+    "count": 1,
+    "items": [
+      {
+        "predicted_at": "2024-11-01T00:00:00+09:00",
+        "latitude": 39.19335,
+        "longitude": 118.02332,
+        "current_direction_deg": 99.71,
+        "current_speed_cm_s": 0.07,
+        "water_temperature_c": 15.45,
+        "raw": {
+          "predcDt": "2024-11-01 00:00:00",
+          "lat": "39.19335",
+          "lot": "118.02332",
+          "crdir": "99.71",
+          "crsp": "0.07",
+          "wtem": "15.45"
+        }
+      }
+    ]
+  },
+  "assertion": {
+    "mode": "snapshot",
+    "exclude_fields": [],
+    "required_fields": []
+  },
+  "meta": {
+    "created_at": "2026-05-15T20:30:00+09:00",
+    "library_version": "0.1.0",
+    "source": "debug_ui"
+  }
+}

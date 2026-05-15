@@ -14,6 +14,9 @@ from khoa import (
     KhoaRequestError,
     MarineIndexPlace,
     RomsPrediction,
+    get_api_catalog,
+    get_api_catalog_entry,
+    get_service_key,
 )
 from khoa.exceptions import KhoaAuthError, KhoaNoDataError
 
@@ -54,6 +57,59 @@ def test_fetch_builds_request_and_normalizes_items(fake_client_factory):
     assert page.context is not None
     assert page.context.endpoint == "roms/GetRomsApiService"
     assert "serviceKey" not in page.context.request_params
+
+
+def test_constructor_strips_service_key_clipboard_whitespace(fake_client_factory):
+    client, session = fake_client_factory(FakeResponse(khoa_payload([])))
+    client_with_space = KhoaClient(
+        api_key=" \n TEST_\r\nKEY \t",
+        session=session,
+        retries=0,
+    )
+
+    assert client_with_space.service_key == "TEST_KEY"
+    client_with_space.fetch("vortex")
+    assert session.calls[0]["params"]["serviceKey"] == "TEST_KEY"
+
+
+def test_from_env_strips_primary_key_and_skips_blank_values(monkeypatch):
+    monkeypatch.setenv("KHOA_SERVICE_KEY", " \n ")
+    monkeypatch.setenv("KHOA_API_KEY", " \n ENV_\tKEY ")
+
+    client = KhoaClient.from_env(retries=0)
+
+    assert client.service_key == "ENV_KEY"
+
+
+def test_constructor_loads_data_go_key_from_default_env_file(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("KHOA_DATA_GO_KR_SERVICE_KEY", raising=False)
+    monkeypatch.delenv("KHOA_SERVICE_KEY", raising=False)
+    monkeypatch.delenv("DATA_GO_KR_SERVICE_KEY", raising=False)
+    monkeypatch.delenv("PUBLIC_DATA_SERVICE_KEY", raising=False)
+    monkeypatch.delenv("KHOA_API_KEY", raising=False)
+    (tmp_path / ".env").write_text(
+        "KHOA_DATA_GO_KR_SERVICE_KEY=' FILE_ KEY '\n",
+        encoding="utf-8",
+    )
+
+    client = KhoaClient(retries=0)
+
+    assert client.service_key == "FILE_KEY"
+
+
+def test_service_key_loader_supports_source_specific_keys(tmp_path, monkeypatch):
+    monkeypatch.delenv("KHOA_DATA_GO_KR_SERVICE_KEY", raising=False)
+    monkeypatch.delenv("KHOA_DIRECT_SERVICE_KEY", raising=False)
+    env_file = tmp_path / ".env"
+    env_file.write_text(
+        "KHOA_DATA_GO_KR_SERVICE_KEY=DATA_KEY\n"
+        "KHOA_DIRECT_SERVICE_KEY= DIRECT_ KEY \n",
+        encoding="utf-8",
+    )
+
+    assert get_service_key("data.go.kr", env_file=env_file) == "DATA_KEY"
+    assert get_service_key("khoa.go.kr", env_file=env_file) == "DIRECT_KEY"
 
 
 def test_snake_case_aliases_and_dynamic_service_method(fake_client_factory):
@@ -172,7 +228,7 @@ def test_beach_search_calls_direct_endpoint_and_returns_dto(fake_client_factory)
     }
     client, session = fake_client_factory(FakeResponse(payload))
 
-    result = client.beach_search("BCH001", service_key="DIRECT_KEY")
+    result = client.beach_search("BCH001", service_key=" \nDIRECT_KEY\t")
 
     call = session.calls[0]
     assert call["url"].endswith("/beach/search.do")
@@ -187,6 +243,34 @@ def test_beach_search_calls_direct_endpoint_and_returns_dto(fake_client_factory)
     assert observation.water_temperature_c == 16.2
     assert observation.wind_speed_m_s == 2.5
     assert observation.observed_at is not None
+
+
+def test_beach_search_prefers_khoa_direct_key_from_env_file(tmp_path, fake_client_factory):
+    env_file = tmp_path / ".env"
+    env_file.write_text("KHOA_DIRECT_SERVICE_KEY=DIRECT_KEY\n", encoding="utf-8")
+    client, session = fake_client_factory(
+        FakeResponse({"result": {"meta": {"beach_code": "BCH001"}, "data": []}})
+    )
+
+    result = client.beach_search("BCH001", env_file=env_file)
+
+    assert result.id == "BCH001"
+    assert session.calls[0]["params"]["ServiceKey"] == "DIRECT_KEY"
+
+
+def test_api_catalog_contains_human_readable_dataset_names():
+    catalog = get_api_catalog()
+    roms = get_api_catalog_entry("roms")
+
+    assert len(catalog) >= 46
+    assert roms["service_key"] == "roms"
+    assert roms["dataset_name"] == "ROMS 수치예측모델"
+    assert roms["dataset_label"] == "ROMS 수치예측모델 (roms)"
+    assert roms["data_source"] == "data.go.kr"
+    assert roms["endpoint"] == "roms/GetRomsApiService"
+    assert roms["service_key_url"].endswith("/15142227/openapi.do")
+    assert "KHOA_DATA_GO_KR_SERVICE_KEY" in roms["service_key_env_names"]
+    assert roms["required_params"] == ["ymin", "ymax", "xmin", "xmax"]
 
 
 def test_surfing_index_groups_places_and_enriches_address_once(fake_client_factory):

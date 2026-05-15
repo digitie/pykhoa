@@ -19,7 +19,7 @@ pip install -e .
 ```python
 from khoa import KhoaClient
 
-client = KhoaClient(api_key="...")  # 또는 KhoaClient.from_env()
+client = KhoaClient(api_key="...")  # 또는 KhoaClient()
 
 page = client.fetch(
     "roms",
@@ -36,6 +36,19 @@ for row in page.items:
 
 `fetch()`는 `khoa.SERVICE_DEFINITIONS`의 서비스 key, KHOA `api_id`,
 operation 이름, 한글 제목을 모두 받을 수 있습니다.
+
+명시 키를 넘기지 않으면 환경변수와 현재 작업 디렉토리의 `.env`에서 데이터소스별
+서비스키를 찾습니다. 복사/붙여넣기로 들어간 앞뒤 공백, 줄바꿈, 중간 공백은
+자동으로 제거합니다.
+
+```env
+KHOA_DATA_GO_KR_SERVICE_KEY=...
+KHOA_DIRECT_SERVICE_KEY=...
+VWORLD_API_KEY=...
+```
+
+`KHOA_DATA_GO_KR_SERVICE_KEY`는 data.go.kr ODMI 호출에 쓰고,
+`KHOA_DIRECT_SERVICE_KEY`는 `beach_search()` 같은 KHOA 직접 endpoint에 씁니다.
 
 자주 쓰는 KHOA 파라미터는 snake-case 별칭도 받을 수 있습니다.
 
@@ -109,6 +122,53 @@ for forecast in place.forecasts:
 DTO 그룹핑 helper가 제공되는 지수는 `sea_split_index`, `fishing_index`,
 `seasickness_index`, `skin_scuba_index`, `mudflat_index`, `surfing_index`,
 `sea_trip_index`입니다.
+
+## 디버그 fixture
+
+별도 Web UI나 로컬 디버그 스크립트에서 fixture를 만들 수 있도록 Streamlit에
+의존하지 않는 디버그 도구를 제공합니다.
+
+```python
+from khoa import KhoaClient, save_fixture
+
+client = KhoaClient(api_key="...")
+run = client.debug_fetch(
+    "roms",
+    ymin=34.0,
+    ymax=34.1,
+    xmin=123.2,
+    xmax=123.3,
+)
+
+path = save_fixture(
+    base_dir="tests/fixtures",
+    function_name="roms",
+    case_name="roms_basic",
+    description="ROMS 기본 응답 replay",
+    input_data=run.input,
+    request_data=run.request,
+    response_data=run.response,
+    parsed_result=run.parsed,
+    processed_result=run.processed,
+)
+print(path)
+```
+
+fixture 저장 전 `serviceKey`, `api_key`, `Authorization`, token 값은 자동으로
+마스킹됩니다. 저장된 `tests/fixtures/**/*.json`은 기본 pytest에서 외부 API 호출 없이
+replay 방식으로 검증됩니다. 자세한 내용은 `docs/debug-fixtures.md`를 참고합니다.
+
+API 선택 UI가 필요하면 `get_api_catalog()` 또는 `client.api_catalog()`를 사용합니다.
+각 항목에는 사람이 읽을 수 있는 `dataset_name`, 표시용 `dataset_label`, data.go.kr
+서비스키 신청/상세 링크인 `service_key_url`, 데이터소스별 키 후보인
+`service_key_env_names`가 들어 있습니다.
+
+```python
+from khoa import get_api_catalog
+
+for item in get_api_catalog():
+    print(item["dataset_label"], item["service_key_url"])
+```
 
 ## KHOA 포털 관측소 목록
 

@@ -9,6 +9,15 @@ python -m ruff check .
 python -m mypy src/khoa
 ```
 
+`tests/test_generated_fixtures.py`는 `tests/fixtures/**/*.json`을 자동으로 읽어
+replay 기반 회귀 테스트를 수행합니다. 이 테스트는 저장된 `response.body`를
+parser/processor에 다시 넣어 `processed` 결과를 비교하며, 외부 API를 호출하지
+않습니다.
+
+새 fixture function을 추가할 때는 `tests/runners.py`의 `RUNNERS`에 parse/process
+함수를 등록합니다. fixture마다 별도 테스트 파일을 생성하지 않습니다. 지원되는
+assertion mode는 `snapshot`, `schema_only`, `required_fields`, `count`입니다.
+
 live test는 data.go.kr 실제 서비스를 호출하므로 명시적으로 켤 때만 실행합니다.
 
 ```bash

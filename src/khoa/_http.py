@@ -10,7 +10,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
-from ._convert import without_none
+from ._convert import normalize_service_key, without_none
 from .exceptions import (
     KhoaAuthError,
     KhoaParseError,
@@ -72,9 +72,10 @@ class KhoaHttp:
         timeout: float = 10.0,
         retries: int = 3,
     ) -> None:
-        if not service_key:
+        key = normalize_service_key(service_key)
+        if not key:
             raise KhoaAuthError("service_key is required", failure_kind="auth")
-        self.service_key = service_key
+        self.service_key = key
         self.base_url = base_url.rstrip("/")
         self.service_key_param = service_key_param
         self.session = session or build_session(retries)

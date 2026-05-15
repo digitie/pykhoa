@@ -37,6 +37,7 @@
 
 - `README.md`: 사용자용 개요, 설치, 예제, 테스트 안내.
 - `docs/openapi-catalog.md`: KHOA ODMI 서비스 목록, `api_id`, data.go.kr ID, 필수 파라미터.
+- `docs/debug-fixtures.md`: 디버그 실행, fixture 저장, replay 테스트 구조.
 - `docs/testing.md`: 로컬 검증, live test 실행 방법, data.go.kr 403 처리 안내.
 - `docs/repeated-mistakes.md`: 이 저장소에서 반복하지 말아야 할 작업 실수와 환경 함정.
 - `pyproject.toml`: 패키징, 의존성, lint, test, type-check 설정.

@@ -7,8 +7,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
+
+from .keys import SERVICE_KEY_ENV_NAMES_BY_SOURCE
 
 DATA_GO_KR_PROVIDER_CODE: Final = "1192136"
 DEFAULT_BASE_URL: Final = f"http://apis.data.go.kr/{DATA_GO_KR_PROVIDER_CODE}"
@@ -628,3 +631,40 @@ def get_service(key: str | ServiceDefinition) -> ServiceDefinition:
     except KeyError as exc:
         known = ", ".join(service.key for service in SERVICE_DEFINITIONS)
         raise KeyError(f"unknown KHOA ODMI service {key!r}; known keys: {known}") from exc
+
+
+def get_api_catalog() -> tuple[dict[str, Any], ...]:
+    """Streamlit 등 UI에서 표로 보여주기 쉬운 API 카탈로그를 반환합니다."""
+
+    return tuple(_catalog_entry(service) for service in SERVICE_DEFINITIONS)
+
+
+def get_api_catalog_entry(key: str | ServiceDefinition) -> dict[str, Any]:
+    """서비스 하나의 API 카탈로그 항목을 dict로 반환합니다."""
+
+    return _catalog_entry(get_service(key))
+
+
+def _catalog_entry(service: ServiceDefinition) -> dict[str, Any]:
+    entry: Mapping[str, Any] = {
+        "service_key": service.key,
+        "dataset_name": service.title,
+        "dataset_label": f"{service.title} ({service.key})",
+        "api_id": service.api_id,
+        "data_go_kr_id": service.data_go_kr_id,
+        "category": service.category,
+        "service_path": service.service_path,
+        "operation": service.operation,
+        "endpoint": service.endpoint,
+        "requested_url": service.requested_url,
+        "data_go_kr_url": service.data_go_kr_url,
+        "service_key_url": service.data_go_kr_url,
+        "data_source": "data.go.kr",
+        "service_key_env_names": list(SERVICE_KEY_ENV_NAMES_BY_SOURCE["data.go.kr"]),
+        "khoa_detail_url": service.khoa_detail_url,
+        "required_params": list(service.required_params),
+        "optional_params": list(service.optional_params),
+        "response_fields": list(service.response_fields),
+        "aliases": list(service.aliases),
+    }
+    return dict(entry)

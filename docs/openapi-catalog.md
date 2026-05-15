@@ -6,6 +6,11 @@ KHOA 페이지에서 실제 확인되는 국가중점 ODMI 상세 페이지는 4
 문구에는 54건으로 표시되지만 6페이지가 비어 있고, 상세 페이지의 data.go.kr
 매핑도 아래 46개 항목을 기준으로 확인했습니다.
 
+라이브러리에서는 `khoa.get_api_catalog()` 또는 `KhoaClient.api_catalog()`로 같은
+목록을 dict tuple로 받을 수 있습니다. 각 항목은 `dataset_name`, `dataset_label`,
+`service_key_url`을 포함하므로 UI에서 데이터셋명을 사람 친화적으로 보여주고
+data.go.kr 서비스키 신청 링크를 함께 표시할 수 있습니다.
+
 | key | api_id | data.go.kr | title | required |
 | --- | --- | --- | --- | --- |
 | `roms` | `SV_AP_01_001` | `15142227` | ROMS 수치예측모델 | `ymin`, `ymax`, `xmin`, `xmax` |

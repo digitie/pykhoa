@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from datetime import date, datetime
 from typing import Any
@@ -23,6 +24,16 @@ def strip_or_none(value: object) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def normalize_service_key(value: object) -> str | None:
+    """복사/붙여넣기로 섞인 인증키 앞뒤 공백과 줄바꿈을 제거합니다."""
+
+    text = strip_or_none(value)
+    if text is None:
+        return None
+    normalized = re.sub(r"\s+", "", text)
+    return normalized or None
 
 
 def csv_or_none(value: object) -> str | None:
