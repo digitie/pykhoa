@@ -39,6 +39,10 @@ dev = [
   "mypy>=1.10",
   "types-requests>=2.31",
 ]
+debug-ui = [
+  "pandas>=2",
+  "streamlit>=1.36",
+]
 
 [tool.setuptools.packages.find]
 where = ["src"]
