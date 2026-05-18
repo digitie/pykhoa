@@ -27,6 +27,14 @@
 - 기본 테스트는 실제 네트워크 호출 없이 동작해야 합니다.
 - 실제 API 테스트는 `PYKHOA_RUN_LIVE=1`과 `KHOA_SERVICE_KEY`가 있을 때만 실행합니다.
 
+## Provider API 사용 원칙
+
+- 외부 API 관련 작업은 다른 구현보다 먼저 wrapper/adapter/gateway 지양 원칙을 확인하고 문서/코드에 반영한 뒤 진행합니다.
+- downstream이 직접 사용할 안정된 public client, typed model, enum, helper를 제공합니다.
+- 단순 전달용 wrapper, 장기 호환 alias, 임시 facade를 만들지 않습니다.
+- TripMate나 `python-krtour-map`에서 필요한 endpoint, pagination, cursor, exception, raw payload 계약이 부족하면 이 저장소의 public API를 먼저 안정화합니다.
+- 다른 라이브러리에 검증된 구현이 있으면 wrapper로 감싸지 말고 라이선스와 출처를 확인한 뒤 현재 구조에 직접 반영합니다.
+
 ## 구현 방향
 
 - 불필요한 wrapper, adapter, facade, helper 계층을 만들지 않습니다. 기존 라이브러리나 표준 도구가 이미 해결한 동작은 가능한 한 `khoa`의 실제 호출 지점이나 모델 변환 지점에 직접 반영합니다.
