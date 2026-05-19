@@ -80,6 +80,34 @@ data.go.kr 서비스키 신청 링크를 함께 표시할 수 있습니다.
 - `address_latitude`, `address_longitude`, `address_distance_m`
 - `address_match_type`, `address_source`
 
+## 해양수산부 해수욕장정보 서비스
+
+TripMate 해수욕장 place feature의 기준 장소 정보는 아래 공공데이터포털
+서비스를 함께 사용한다.
+
+- data.go.kr ID: `15058519`
+- 상세 URL: <https://www.data.go.kr/data/15058519/openapi.do>
+- 요청 URL:
+  `http://apis.data.go.kr/1192000/service/OceansBeachInfoService1/getOceansBeachInfo1`
+- 필수 파라미터: `ServiceKey`, `SIDO_NM`
+- 페이지 파라미터: `pageNo`, `numOfRows`
+- 결과 형식 파라미터: `resultType=JSON`
+
+이 서비스는 KHOA ODMI 46개 카탈로그에는 들어 있지 않지만, 해수욕장 장소의
+기준명과 위치를 제공하므로 `KhoaClient.oceans_beach_info()`와
+`KhoaClient.iter_oceans_beach_info_pages()`로 typed DTO를 제공한다. 반환 DTO는
+`OceanBeachInfo`이며 아래 값을 보존한다.
+
+- `sido_name`, `gugun_name`, `name`
+- `beach_width_m`, `beach_length_m`, `beach_kind`
+- `link_url`, `link_name`, `image_url`, `emergency_contact`
+- `coordinate`: `kraddr.base.PlaceCoordinate`
+- `source_key`: `시도|구군|정점명` natural key
+- `raw`: 원문 row
+
+TripMate나 `python-krtour-map`에서는 이 endpoint를 다시 감싸는 wrapper를 만들지
+않고, 위 public method와 `OceanBeachInfo` DTO를 직접 사용한다.
+
 `https://khoa.go.kr/oceandata/api/beach/search.do`는 data.go.kr ODMI 목록에는
 들어 있지 않은 KHOA 직접 endpoint입니다. `KhoaClient.beach_search(beach_code, ...)`로
 호출하며, 응답의 `result.meta`와 `result.data`를 `BeachSearchResult`와

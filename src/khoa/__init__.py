@@ -1,7 +1,15 @@
 """KHOA ODMI OpenAPI 서비스를 위한 Python 헬퍼."""
 
 from ._convert import normalize_service_key
-from .client import KhoaClient, KhoaODMIClient
+from .client import (
+    KHOA_BEACH_SEARCH_URL,
+    OCEANS_BEACH_INFO_DATA_GO_KR_ID,
+    OCEANS_BEACH_INFO_DEFAULT_SIDO_NAMES,
+    OCEANS_BEACH_INFO_URL,
+    AsyncKhoaClient,
+    KhoaClient,
+    KhoaODMIClient,
+)
 from .debug import (
     DEFAULT_ASSERTION,
     SENSITIVE_KEYS,
@@ -37,6 +45,7 @@ from .models import (
     MarineIndexForecast,
     MarineIndexPlace,
     Observatory,
+    OceanBeachInfo,
     Page,
     RawRecord,
     ResponseContext,
@@ -85,6 +94,7 @@ __all__ = [
     "BEACH_OBSERVATORY_SOURCE_SHA256",
     "BEACH_OPENAPI_ID",
     "DEFAULT_ADDRESS_SEARCH_OFFSETS_DEGREES",
+    "AsyncKhoaClient",
     "KHOA_ODMI_LIST_URL",
     "KHOA_OPENAPI_DETAIL_URL",
     "KHOA_OPENAPI_INFO_URL",
@@ -106,8 +116,13 @@ __all__ = [
     "KhoaRateLimitError",
     "KhoaRequestError",
     "KhoaServerError",
+    "KHOA_BEACH_SEARCH_URL",
     "MarineIndexForecast",
     "MarineIndexPlace",
+    "OCEANS_BEACH_INFO_DATA_GO_KR_ID",
+    "OCEANS_BEACH_INFO_DEFAULT_SIDO_NAMES",
+    "OCEANS_BEACH_INFO_URL",
+    "OceanBeachInfo",
     "Observatory",
     "Page",
     "RawRecord",

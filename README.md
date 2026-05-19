@@ -37,6 +37,28 @@ for row in page.items:
 `fetch()`는 `khoa.SERVICE_DEFINITIONS`의 서비스 key, KHOA `api_id`,
 operation 이름, 한글 제목을 모두 받을 수 있습니다.
 
+비동기 호출은 `python-krheritage-api`와 같은 facade 형태로 사용합니다.
+`KhoaClient.aio()`가 `AsyncKhoaClient`를 만들고, 메서드 이름은 동기
+클라이언트와 같습니다.
+
+```python
+import asyncio
+
+from khoa import KhoaClient
+
+
+async def main() -> None:
+    async with KhoaClient.aio(api_key="...") as client:
+        page = await client.fetch("vortex", num_of_rows=10)
+        async for beach_page in client.iter_oceans_beach_info_pages(
+            sido_names=("제주",),
+            num_of_rows=100,
+        ):
+            print(len(beach_page.items))
+
+asyncio.run(main())
+```
+
 명시 키를 넘기지 않으면 환경변수와 현재 작업 디렉토리의 `.env`에서 데이터소스별
 서비스키를 찾습니다. 복사/붙여넣기로 들어간 앞뒤 공백, 줄바꿈, 중간 공백은
 자동으로 제거합니다.
@@ -87,6 +109,23 @@ place = address_page.items[0]
 print(place.name, place.parcel_address, place.road_address)
 for forecast in place.forecasts:
     print(forecast.predicted_on, forecast.forecast_period, forecast.open_status)
+```
+
+공공데이터포털의 해양수산부 해수욕장정보 서비스
+`OceansBeachInfoService1/getOceansBeachInfo1`는 `oceans_beach_info()`로
+호출합니다. 이 서비스는 KHOA ODMI 목록에는 없지만, TripMate 해수욕장 장소
+feature의 기준 장소명, 시도/구군, 해변 폭/연장, 특징, 관련 사이트, 이미지 URL,
+비상연락처, WGS84 좌표를 제공하므로 `python-khoa-api`의 안정된 public API로
+직접 노출합니다.
+
+```python
+page = client.oceans_beach_info("제주", num_of_rows=100)
+for beach in page.items:
+    print(beach.source_key, beach.name, beach.coordinate)
+
+for page in client.iter_oceans_beach_info_pages():
+    for beach in page.items:
+        print(beach.sido_name, beach.gugun_name, beach.name)
 ```
 
 KHOA 직접 endpoint인 `https://khoa.go.kr/oceandata/api/beach/search.do`는

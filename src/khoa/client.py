@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Mapping
+from collections.abc import AsyncIterator, Callable, Iterator, Mapping
 from datetime import UTC, date, datetime
 from os import PathLike
+from types import TracebackType
 from typing import Any, TypeVar
 
 from ._convert import (
@@ -14,7 +15,7 @@ from ._convert import (
     to_yyyymmdd,
     without_none,
 )
-from ._http import KhoaHttp, SessionLike
+from ._http import KhoaHttp, SessionLike, run_async
 from .debug import DebugRun, debug_error
 from .exceptions import (
     KhoaAuthError,
@@ -32,6 +33,7 @@ from .models import (
     MarineIndexForecast,
     MarineIndexPlace,
     Observatory,
+    OceanBeachInfo,
     Page,
     RawRecord,
     ResponseContext,
@@ -54,6 +56,34 @@ from .services import (
 
 DEFAULT_ENV_NAMES = DATA_GO_KR_ENV_NAMES
 KHOA_BEACH_SEARCH_URL = "https://khoa.go.kr/oceandata/api/beach/search.do"
+OCEANS_BEACH_INFO_URL = (
+    "http://apis.data.go.kr/1192000/service/"
+    "OceansBeachInfoService1/getOceansBeachInfo1"
+)
+OCEANS_BEACH_INFO_ENDPOINT = "service/OceansBeachInfoService1/getOceansBeachInfo1"
+OCEANS_BEACH_INFO_TITLE = "해양수산부_해수욕장정보 서비스"
+OCEANS_BEACH_INFO_SERVICE_PATH = "OceansBeachInfoService1"
+OCEANS_BEACH_INFO_OPERATION = "getOceansBeachInfo1"
+OCEANS_BEACH_INFO_DATA_GO_KR_ID = "15058519"
+OCEANS_BEACH_INFO_DEFAULT_SIDO_NAMES = (
+    "서울",
+    "부산",
+    "대구",
+    "인천",
+    "광주",
+    "대전",
+    "울산",
+    "세종",
+    "경기",
+    "강원",
+    "충북",
+    "충남",
+    "전북",
+    "전남",
+    "경북",
+    "경남",
+    "제주",
+)
 
 _MARINE_INDEX_NAME_KEYS: dict[str, tuple[str, ...]] = {
     "sea_split_index": ("splocPstnNm",),
@@ -108,6 +138,7 @@ class KhoaClient:
         env_file: str | PathLike[str] | None = ".env",
         timeout: float = 10.0,
         retries: int = 3,
+        max_rps: float = 5.0,
         session: SessionLike | None = None,
     ) -> None:
         normalized_service_key = normalize_service_key(service_key)
@@ -131,6 +162,7 @@ class KhoaClient:
         self.service_key = key
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
+        self.closed = False
         self._http = KhoaHttp(
             key,
             base_url=self.base_url,
@@ -138,7 +170,37 @@ class KhoaClient:
             session=session,
             timeout=timeout,
             retries=retries,
+            max_rps=max_rps,
         )
+
+    def __enter__(self) -> KhoaClient:
+        return self
+
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        self.close()
+
+    def close(self) -> None:
+        """동기 facade에서 내부 HTTP 세션을 닫습니다."""
+
+        self._http.close()
+        self.closed = True
+
+    async def aclose(self) -> None:
+        """비동기 경로에서 내부 HTTP 세션을 닫습니다."""
+
+        await self._http.aclose()
+        self.closed = True
+
+    @classmethod
+    def aio(cls, **kwargs: Any) -> AsyncKhoaClient:
+        """python-krheritage-api와 같은 형태의 async 클라이언트를 만듭니다."""
+
+        return AsyncKhoaClient(**kwargs)
 
     @classmethod
     def from_env(
@@ -204,6 +266,35 @@ class KhoaClient:
     ) -> Page[RawRecord]:
         """임의 KHOA ODMI 서비스를 호출하고 정규화된 원문 item mapping을 반환합니다."""
 
+        return run_async(
+            lambda: self.afetch(
+                service,
+                params,
+                page_no=page_no,
+                num_of_rows=num_of_rows,
+                response_type=response_type,
+                include=include,
+                exclude=exclude,
+                validate_required=validate_required,
+                **kwargs,
+            )
+        )
+
+    async def afetch(
+        self,
+        service: str | ServiceDefinition,
+        params: Mapping[str, Any] | None = None,
+        *,
+        page_no: int = 1,
+        num_of_rows: int = 10,
+        response_type: str = "json",
+        include: str | tuple[str, ...] | list[str] | None = None,
+        exclude: str | tuple[str, ...] | list[str] | None = None,
+        validate_required: bool = True,
+        **kwargs: Any,
+    ) -> Page[RawRecord]:
+        """임의 KHOA ODMI 서비스를 비동기로 호출합니다."""
+
         definition = get_service(service)
         request_params = self._request_params(
             definition,
@@ -216,7 +307,7 @@ class KhoaClient:
             validate_required=validate_required,
             extra=kwargs,
         )
-        payload, request_url = self._http.get(definition, request_params)
+        payload, request_url = await self._http.aget(definition, request_params)
         body = _extract_body(payload, definition)
         rows = _extract_items(body, definition)
         return Page[RawRecord](
@@ -233,6 +324,15 @@ class KhoaClient:
 
         return self.fetch(service, **kwargs).items
 
+    async def aitems(
+        self,
+        service: str | ServiceDefinition,
+        **kwargs: Any,
+    ) -> tuple[RawRecord, ...]:
+        """서비스를 비동기로 호출하고 응답 item만 반환합니다."""
+
+        return (await self.afetch(service, **kwargs)).items
+
     def debug_fetch(
         self,
         service: str | ServiceDefinition,
@@ -240,6 +340,16 @@ class KhoaClient:
         **kwargs: Any,
     ) -> DebugRun:
         """디버그 UI/fixture 생성을 위한 fetch 실행 정보를 반환합니다."""
+
+        return run_async(lambda: self.adebug_fetch(service, params, **kwargs))
+
+    async def adebug_fetch(
+        self,
+        service: str | ServiceDefinition,
+        params: Mapping[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> DebugRun:
+        """디버그 UI/fixture 생성을 위한 fetch 실행 정보를 비동기로 반환합니다."""
 
         definition = get_service(service)
         input_data = {"service": definition.key, "params": dict(params or {}), "options": kwargs}
@@ -251,7 +361,7 @@ class KhoaClient:
             f"서비스키 신청 링크: {catalog_entry['service_key_url']}",
         ]
         try:
-            page = self.fetch(definition, params, **kwargs)
+            page = await self.afetch(definition, params, **kwargs)
         except Exception as exc:
             trace.append(f"실행 실패: {exc.__class__.__name__}")
             return DebugRun(
@@ -327,6 +437,43 @@ class KhoaClient:
                 return
             next_page = page.next_page_no
 
+    async def aiter_pages(
+        self,
+        service: str | ServiceDefinition,
+        params: Mapping[str, Any] | None = None,
+        *,
+        page_no: int = 1,
+        num_of_rows: int = 10,
+        max_pages: int | None = None,
+        max_items: int | None = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[Page[RawRecord]]:
+        """선택적 안전 제한과 함께 KHOA 페이지 응답을 비동기로 순회합니다."""
+
+        next_page = page_no
+        pages = 0
+        yielded = 0
+        while True:
+            page = await self.afetch(
+                service,
+                params,
+                page_no=next_page,
+                num_of_rows=num_of_rows,
+                **kwargs,
+            )
+            if not page.items:
+                return
+            yield page
+            pages += 1
+            yielded += len(page.items)
+            if max_pages is not None and pages >= max_pages:
+                return
+            if max_items is not None and yielded >= max_items:
+                return
+            if page.next_page_no is None:
+                return
+            next_page = page.next_page_no
+
     def roms(
         self,
         *,
@@ -341,7 +488,34 @@ class KhoaClient:
     ) -> Page[RomsPrediction]:
         """ROMS 수치예측 행을 가져와 typed 모델로 변환합니다."""
 
-        page = self.fetch(
+        return run_async(
+            lambda: self.aroms(
+                ymin=ymin,
+                ymax=ymax,
+                xmin=xmin,
+                xmax=xmax,
+                page_no=page_no,
+                num_of_rows=num_of_rows,
+                include=include,
+                exclude=exclude,
+            )
+        )
+
+    async def aroms(
+        self,
+        *,
+        ymin: float,
+        ymax: float,
+        xmin: float,
+        xmax: float,
+        page_no: int = 1,
+        num_of_rows: int = 10,
+        include: str | tuple[str, ...] | list[str] | None = None,
+        exclude: str | tuple[str, ...] | list[str] | None = None,
+    ) -> Page[RomsPrediction]:
+        """ROMS 수치예측 행을 비동기로 가져와 typed 모델로 변환합니다."""
+
+        page = await self.afetch(
             "roms",
             ymin=ymin,
             ymax=ymax,
@@ -381,7 +555,46 @@ class KhoaClient:
     ) -> Page[BeachIndexPlace]:
         """해수욕지수 행을 해수욕장별 예보 묶음 DTO로 반환합니다."""
 
-        page = self.fetch(
+        return run_async(
+            lambda: self.abeach_index(
+                params,
+                page_no=page_no,
+                num_of_rows=num_of_rows,
+                response_type=response_type,
+                include=include,
+                exclude=exclude,
+                include_address=include_address,
+                vworld_client=vworld_client,
+                vworld_api_key=vworld_api_key,
+                vworld_domain=vworld_domain,
+                vworld_env_file=vworld_env_file,
+                address_search_offsets_degrees=address_search_offsets_degrees,
+                validate_required=validate_required,
+                **kwargs,
+            )
+        )
+
+    async def abeach_index(
+        self,
+        params: Mapping[str, Any] | None = None,
+        *,
+        page_no: int = 1,
+        num_of_rows: int = 10,
+        response_type: str = "json",
+        include: str | tuple[str, ...] | list[str] | None = None,
+        exclude: str | tuple[str, ...] | list[str] | None = None,
+        include_address: bool = False,
+        vworld_client: VworldReverseGeocoderLike | None = None,
+        vworld_api_key: str | None = None,
+        vworld_domain: str | None = None,
+        vworld_env_file: str | PathLike[str] | None = None,
+        address_search_offsets_degrees: tuple[float, ...] = (0.0,),
+        validate_required: bool = True,
+        **kwargs: Any,
+    ) -> Page[BeachIndexPlace]:
+        """해수욕지수 행을 비동기로 가져와 해수욕장별 예보 묶음 DTO로 반환합니다."""
+
+        page = await self.afetch(
             "beach_index",
             params,
             page_no=page_no,
@@ -412,72 +625,275 @@ class KhoaClient:
     ) -> BeachSearchResult:
         """KHOA `beach/search.do`에서 해수욕장 최신 관측 정보를 가져옵니다."""
 
+        return run_async(
+            lambda: self.abeach_search(
+                beach_code,
+                service_key=service_key,
+                env_file=env_file,
+                include_address=include_address,
+            )
+        )
+
+    async def abeach_search(
+        self,
+        beach_code: str,
+        *,
+        service_key: str | None = None,
+        env_file: str | PathLike[str] | None = ".env",
+        include_address: bool = True,
+    ) -> BeachSearchResult:
+        """KHOA `beach/search.do`에서 해수욕장 최신 관측 정보를 비동기로 가져옵니다."""
+
         key = normalize_service_key(service_key) or get_service_key(
             "khoa.go.kr",
             env_file=env_file,
         ) or self.service_key
         params = {"ServiceKey": key, "BeachCode": beach_code}
-        response = self._http.session.get(
+        payload, _request_url = await self._http.aget_url(
             KHOA_BEACH_SEARCH_URL,
             params=params,
-            timeout=self.timeout,
-        )
-        _raise_direct_status(
-            response.status_code,
-            response.text,
             endpoint="beach/search.do",
-            key=key,
+            service_key=key,
         )
-        try:
-            payload = response.json()
-        except ValueError as exc:
-            raise KhoaParseError(
-                "KHOA beach search response was not valid JSON",
-                endpoint="beach/search.do",
-                failure_kind="parse",
-            ) from exc
-        if not isinstance(payload, Mapping):
-            raise KhoaParseError(
-                "KHOA beach search JSON root was not an object",
-                endpoint="beach/search.do",
-                failure_kind="parse",
-            )
         return _beach_search_result(payload, include_address=include_address)
+
+    def oceans_beach_info(
+        self,
+        sido_nm: str,
+        *,
+        page_no: int = 1,
+        num_of_rows: int = 100,
+        response_type: str = "JSON",
+        service_key: str | None = None,
+    ) -> Page[OceanBeachInfo]:
+        """공공데이터포털 해양수산부 해수욕장정보 한 페이지를 반환합니다."""
+
+        return run_async(
+            lambda: self.aoceans_beach_info(
+                sido_nm,
+                page_no=page_no,
+                num_of_rows=num_of_rows,
+                response_type=response_type,
+                service_key=service_key,
+            )
+        )
+
+    async def aoceans_beach_info(
+        self,
+        sido_nm: str,
+        *,
+        page_no: int = 1,
+        num_of_rows: int = 100,
+        response_type: str = "JSON",
+        service_key: str | None = None,
+    ) -> Page[OceanBeachInfo]:
+        """공공데이터포털 해양수산부 해수욕장정보 한 페이지를 비동기로 반환합니다."""
+
+        if page_no < 1:
+            raise ValueError("page_no must be >= 1")
+        if not 1 <= num_of_rows <= 1000:
+            raise ValueError("num_of_rows must be between 1 and 1000")
+        sido_name = sido_nm.strip()
+        if not sido_name:
+            raise KhoaRequestError(
+                "oceans_beach_info requires SIDO_NM",
+                provider="data.go.kr",
+                endpoint=OCEANS_BEACH_INFO_ENDPOINT,
+                failure_kind="request",
+            )
+
+        key = normalize_service_key(service_key) or self.service_key
+        params: dict[str, Any] = {
+            "ServiceKey": key,
+            "pageNo": page_no,
+            "numOfRows": num_of_rows,
+            "SIDO_NM": sido_name,
+            "resultType": response_type,
+        }
+        payload, _request_url = await self._http.aget_url(
+            OCEANS_BEACH_INFO_URL,
+            params=without_none(params),
+            endpoint=OCEANS_BEACH_INFO_ENDPOINT,
+            service_key=key,
+        )
+
+        body = _extract_data_go_body(
+            payload,
+            provider="data.go.kr",
+            endpoint=OCEANS_BEACH_INFO_ENDPOINT,
+        )
+        rows = _extract_direct_items(
+            body,
+            provider="data.go.kr",
+            endpoint=OCEANS_BEACH_INFO_ENDPOINT,
+        )
+        request_params = {
+            key: value for key, value in params.items() if key != "ServiceKey"
+        }
+        return Page[OceanBeachInfo](
+            items=tuple(OceanBeachInfo.from_raw(row) for row in rows),
+            total_count=to_int_or_none(body.get("totalCount")) or len(rows),
+            page_no=to_int_or_none(body.get("pageNo")) or page_no,
+            num_of_rows=to_int_or_none(body.get("numOfRows")) or num_of_rows,
+            raw=dict(body),
+            context=ResponseContext(
+                provider="data.go.kr",
+                service_key="[redacted]",
+                service_title=OCEANS_BEACH_INFO_TITLE,
+                service_path=OCEANS_BEACH_INFO_SERVICE_PATH,
+                operation=OCEANS_BEACH_INFO_OPERATION,
+                endpoint=OCEANS_BEACH_INFO_ENDPOINT,
+                request_url=OCEANS_BEACH_INFO_URL,
+                request_params=request_params,
+                collected_at=datetime.now(UTC),
+            ),
+        )
+
+    def iter_oceans_beach_info_pages(
+        self,
+        *,
+        sido_names: tuple[str, ...] | list[str] | None = None,
+        page_no: int = 1,
+        num_of_rows: int = 100,
+        max_pages: int | None = None,
+        max_items: int | None = None,
+        response_type: str = "JSON",
+        service_key: str | None = None,
+    ) -> Iterator[Page[OceanBeachInfo]]:
+        """시도명 목록을 순회하며 해수욕장정보 페이지를 모두 반환합니다."""
+
+        names = tuple(sido_names or OCEANS_BEACH_INFO_DEFAULT_SIDO_NAMES)
+        yielded_pages = 0
+        yielded_items = 0
+        for sido_name in names:
+            next_page = page_no
+            while True:
+                page = self.oceans_beach_info(
+                    sido_name,
+                    page_no=next_page,
+                    num_of_rows=num_of_rows,
+                    response_type=response_type,
+                    service_key=service_key,
+                )
+                if page.items:
+                    yield page
+                    yielded_pages += 1
+                    yielded_items += len(page.items)
+                if max_pages is not None and yielded_pages >= max_pages:
+                    return
+                if max_items is not None and yielded_items >= max_items:
+                    return
+                if not page.items or page.next_page_no is None:
+                    break
+                next_page = page.next_page_no
+
+    async def aiter_oceans_beach_info_pages(
+        self,
+        *,
+        sido_names: tuple[str, ...] | list[str] | None = None,
+        page_no: int = 1,
+        num_of_rows: int = 100,
+        max_pages: int | None = None,
+        max_items: int | None = None,
+        response_type: str = "JSON",
+        service_key: str | None = None,
+    ) -> AsyncIterator[Page[OceanBeachInfo]]:
+        """시도명 목록을 순회하며 해수욕장정보 페이지를 비동기로 반환합니다."""
+
+        names = tuple(sido_names or OCEANS_BEACH_INFO_DEFAULT_SIDO_NAMES)
+        yielded_pages = 0
+        yielded_items = 0
+        for sido_name in names:
+            next_page = page_no
+            while True:
+                page = await self.aoceans_beach_info(
+                    sido_name,
+                    page_no=next_page,
+                    num_of_rows=num_of_rows,
+                    response_type=response_type,
+                    service_key=service_key,
+                )
+                if page.items:
+                    yield page
+                    yielded_pages += 1
+                    yielded_items += len(page.items)
+                if max_pages is not None and yielded_pages >= max_pages:
+                    return
+                if max_items is not None and yielded_items >= max_items:
+                    return
+                if not page.items or page.next_page_no is None:
+                    break
+                next_page = page.next_page_no
 
     def sea_split_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
         """바다갈라짐 체험지수를 장소별 DTO로 반환합니다."""
 
         return self._marine_index("sea_split_index", **kwargs)
 
+    async def asea_split_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
+        """바다갈라짐 체험지수를 장소별 DTO로 비동기 반환합니다."""
+
+        return await self._amarine_index("sea_split_index", **kwargs)
+
     def fishing_index(self, *, gubun: str, **kwargs: Any) -> Page[MarineIndexPlace]:
         """바다낚시지수를 장소별 DTO로 반환합니다."""
 
         return self._marine_index("fishing_index", gubun=gubun, **kwargs)
+
+    async def afishing_index(self, *, gubun: str, **kwargs: Any) -> Page[MarineIndexPlace]:
+        """바다낚시지수를 장소별 DTO로 비동기 반환합니다."""
+
+        return await self._amarine_index("fishing_index", gubun=gubun, **kwargs)
 
     def seasickness_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
         """뱃멀미지수를 항로/선박별 DTO로 반환합니다."""
 
         return self._marine_index("seasickness_index", **kwargs)
 
+    async def aseasickness_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
+        """뱃멀미지수를 항로/선박별 DTO로 비동기 반환합니다."""
+
+        return await self._amarine_index("seasickness_index", **kwargs)
+
     def skin_scuba_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
         """스킨스쿠버지수를 장소별 DTO로 반환합니다."""
 
         return self._marine_index("skin_scuba_index", **kwargs)
+
+    async def askin_scuba_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
+        """스킨스쿠버지수를 장소별 DTO로 비동기 반환합니다."""
+
+        return await self._amarine_index("skin_scuba_index", **kwargs)
 
     def mudflat_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
         """갯벌체험지수를 장소별 DTO로 반환합니다."""
 
         return self._marine_index("mudflat_index", **kwargs)
 
+    async def amudflat_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
+        """갯벌체험지수를 장소별 DTO로 비동기 반환합니다."""
+
+        return await self._amarine_index("mudflat_index", **kwargs)
+
     def surfing_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
         """서핑지수를 장소별 DTO로 반환합니다."""
 
         return self._marine_index("surfing_index", **kwargs)
 
+    async def asurfing_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
+        """서핑지수를 장소별 DTO로 비동기 반환합니다."""
+
+        return await self._amarine_index("surfing_index", **kwargs)
+
     def sea_trip_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
         """바다여행지수를 장소별 DTO로 반환합니다."""
 
         return self._marine_index("sea_trip_index", **kwargs)
+
+    async def asea_trip_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
+        """바다여행지수를 장소별 DTO로 비동기 반환합니다."""
+
+        return await self._amarine_index("sea_trip_index", **kwargs)
 
     def _marine_index(
         self,
@@ -523,6 +939,50 @@ class KhoaClient:
             search_offsets_degrees=address_search_offsets_degrees,
         )
 
+    async def _amarine_index(
+        self,
+        service: str,
+        params: Mapping[str, Any] | None = None,
+        *,
+        page_no: int = 1,
+        num_of_rows: int = 10,
+        response_type: str = "json",
+        include: str | tuple[str, ...] | list[str] | None = None,
+        exclude: str | tuple[str, ...] | list[str] | None = None,
+        include_address: bool = False,
+        vworld_client: VworldReverseGeocoderLike | None = None,
+        vworld_api_key: str | None = None,
+        vworld_domain: str | None = None,
+        vworld_env_file: str | PathLike[str] | None = None,
+        address_search_offsets_degrees: tuple[
+            float, ...
+        ] = DEFAULT_ADDRESS_SEARCH_OFFSETS_DEGREES,
+        validate_required: bool = True,
+        **kwargs: Any,
+    ) -> Page[MarineIndexPlace]:
+        page = await self.afetch(
+            service,
+            params,
+            page_no=page_no,
+            num_of_rows=num_of_rows,
+            response_type=response_type,
+            include=include,
+            exclude=exclude,
+            validate_required=validate_required,
+            **kwargs,
+        )
+        return _marine_index_place_page(
+            page,
+            service_key=service,
+            name_keys=_MARINE_INDEX_NAME_KEYS[service],
+            include_address=include_address,
+            vworld_client=vworld_client,
+            vworld_api_key=vworld_api_key,
+            vworld_domain=vworld_domain,
+            vworld_env_file=vworld_env_file,
+            search_offsets_degrees=address_search_offsets_degrees,
+        )
+
     def first(
         self,
         service: str | ServiceDefinition,
@@ -531,7 +991,17 @@ class KhoaClient:
     ) -> RawRecord:
         """첫 번째 원문 item을 반환하거나 KhoaNoDataError를 발생시킵니다."""
 
-        page = self.fetch(service, params, **kwargs)
+        return run_async(lambda: self.afirst(service, params, **kwargs))
+
+    async def afirst(
+        self,
+        service: str | ServiceDefinition,
+        params: Mapping[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> RawRecord:
+        """첫 번째 원문 item을 비동기로 반환하거나 KhoaNoDataError를 발생시킵니다."""
+
+        page = await self.afetch(service, params, **kwargs)
         if not page.items:
             definition = get_service(service)
             raise KhoaNoDataError(
@@ -588,6 +1058,155 @@ class KhoaClient:
                     failure_kind="request",
                 )
         return cleaned
+
+
+class AsyncKhoaClient:
+    """python-krheritage-api와 같은 형태의 비동기 KHOA facade."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        self._client = KhoaClient(**kwargs)
+
+    async def __aenter__(self) -> AsyncKhoaClient:
+        return self
+
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        traceback: TracebackType | None,
+    ) -> None:
+        await self.aclose()
+
+    @classmethod
+    def from_env(cls, **kwargs: Any) -> AsyncKhoaClient:
+        """환경변수에서 인증키를 읽어 비동기 클라이언트를 만듭니다."""
+
+        client = KhoaClient.from_env(**kwargs)
+        async_client = cls.__new__(cls)
+        async_client._client = client
+        return async_client
+
+    @property
+    def service_key(self) -> str:
+        return self._client.service_key
+
+    @property
+    def base_url(self) -> str:
+        return self._client.base_url
+
+    @property
+    def timeout(self) -> float:
+        return self._client.timeout
+
+    @property
+    def closed(self) -> bool:
+        return self._client.closed
+
+    @property
+    def services(self) -> tuple[ServiceDefinition, ...]:
+        return self._client.services
+
+    def api_catalog(self) -> tuple[dict[str, Any], ...]:
+        return self._client.api_catalog()
+
+    def service(self, key: str | ServiceDefinition) -> ServiceDefinition:
+        return self._client.service(key)
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+    def __getattr__(self, name: str) -> Callable[..., Any]:
+        try:
+            service = get_service(name)
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+        async def caller(**kwargs: Any) -> Page[RawRecord]:
+            return await self.fetch(service, **kwargs)
+
+        return caller
+
+    async def fetch(
+        self,
+        service: str | ServiceDefinition,
+        params: Mapping[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Page[RawRecord]:
+        return await self._client.afetch(service, params, **kwargs)
+
+    async def items(
+        self,
+        service: str | ServiceDefinition,
+        **kwargs: Any,
+    ) -> tuple[RawRecord, ...]:
+        return await self._client.aitems(service, **kwargs)
+
+    async def debug_fetch(
+        self,
+        service: str | ServiceDefinition,
+        params: Mapping[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> DebugRun:
+        return await self._client.adebug_fetch(service, params, **kwargs)
+
+    def iter_pages(
+        self,
+        service: str | ServiceDefinition,
+        params: Mapping[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> AsyncIterator[Page[RawRecord]]:
+        return self._client.aiter_pages(service, params, **kwargs)
+
+    async def roms(self, **kwargs: Any) -> Page[RomsPrediction]:
+        return await self._client.aroms(**kwargs)
+
+    async def beach_index(
+        self,
+        params: Mapping[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> Page[BeachIndexPlace]:
+        return await self._client.abeach_index(params, **kwargs)
+
+    async def beach_search(self, beach_code: str, **kwargs: Any) -> BeachSearchResult:
+        return await self._client.abeach_search(beach_code, **kwargs)
+
+    async def oceans_beach_info(self, sido_nm: str, **kwargs: Any) -> Page[OceanBeachInfo]:
+        return await self._client.aoceans_beach_info(sido_nm, **kwargs)
+
+    def iter_oceans_beach_info_pages(
+        self,
+        **kwargs: Any,
+    ) -> AsyncIterator[Page[OceanBeachInfo]]:
+        return self._client.aiter_oceans_beach_info_pages(**kwargs)
+
+    async def sea_split_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
+        return await self._client.asea_split_index(**kwargs)
+
+    async def fishing_index(self, *, gubun: str, **kwargs: Any) -> Page[MarineIndexPlace]:
+        return await self._client.afishing_index(gubun=gubun, **kwargs)
+
+    async def seasickness_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
+        return await self._client.aseasickness_index(**kwargs)
+
+    async def skin_scuba_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
+        return await self._client.askin_scuba_index(**kwargs)
+
+    async def mudflat_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
+        return await self._client.amudflat_index(**kwargs)
+
+    async def surfing_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
+        return await self._client.asurfing_index(**kwargs)
+
+    async def sea_trip_index(self, **kwargs: Any) -> Page[MarineIndexPlace]:
+        return await self._client.asea_trip_index(**kwargs)
+
+    async def first(
+        self,
+        service: str | ServiceDefinition,
+        params: Mapping[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> RawRecord:
+        return await self._client.afirst(service, params, **kwargs)
 
 
 KhoaODMIClient = KhoaClient
@@ -966,15 +1585,177 @@ def _beach_index_place_from_rows(
     )
 
 
-def _raise_direct_status(status_code: int, text: str, *, endpoint: str, key: str) -> None:
+def _extract_data_go_body(
+    payload: Mapping[str, Any],
+    *,
+    provider: str,
+    endpoint: str,
+) -> Mapping[str, Any]:
+    if "OpenAPI_ServiceResponse" in payload:
+        _raise_direct_openapi_service_response(
+            payload["OpenAPI_ServiceResponse"],
+            provider=provider,
+            endpoint=endpoint,
+        )
+
+    payload = _unwrap_direct_payload(payload)
+    response = payload.get("response")
+    if isinstance(response, Mapping):
+        header = response.get("header")
+        body = response.get("body", {})
+    else:
+        header = payload.get("header")
+        body = payload.get("body")
+        if body is None:
+            body = {key: value for key, value in payload.items() if key != "header"}
+    if not isinstance(header, Mapping):
+        raise KhoaParseError(
+            "data.go.kr response did not contain response.header",
+            provider=provider,
+            endpoint=endpoint,
+            failure_kind="parse",
+        )
+
+    code = str(header.get("resultCode", header.get("code", ""))).strip()
+    message = str(header.get("resultMsg", header.get("message", ""))).strip()
+    if code in {"0", "00", "0000", "NORMAL_CODE", ""}:
+        if not isinstance(body, Mapping):
+            raise KhoaParseError(
+                "data.go.kr response.body was not an object",
+                provider=provider,
+                endpoint=endpoint,
+                failure_kind="parse",
+            )
+        return body
+    if code == "03":
+        return body if isinstance(body, Mapping) else {}
+    _raise_direct_result_code(code, message, provider=provider, endpoint=endpoint)
+    raise AssertionError("unreachable")
+
+
+def _unwrap_direct_payload(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    if "response" in payload or "header" in payload or "body" in payload:
+        return payload
+    for value in payload.values():
+        if isinstance(value, Mapping) and "header" in value:
+            return value
+    return payload
+
+
+def _extract_direct_items(
+    body: Mapping[str, Any],
+    *,
+    provider: str,
+    endpoint: str,
+) -> tuple[Mapping[str, Any], ...]:
+    items = body.get("items")
+    item_data: Any
+    if items in (None, "", []):
+        item_data = body.get("item")
+    elif isinstance(items, Mapping):
+        item_data = items.get("item")
+    else:
+        item_data = items
+    if item_data in (None, "", []):
+        return ()
+    if isinstance(item_data, Mapping):
+        return (item_data,)
+    if isinstance(item_data, list) and all(isinstance(item, Mapping) for item in item_data):
+        return tuple(item_data)
+    raise KhoaParseError(
+        "data.go.kr response.body.items.item was not an object or list",
+        provider=provider,
+        endpoint=endpoint,
+        failure_kind="parse",
+    )
+
+
+def _raise_direct_openapi_service_response(
+    data: Any,
+    *,
+    provider: str,
+    endpoint: str,
+) -> None:
+    if not isinstance(data, Mapping):
+        raise KhoaParseError(
+            "OpenAPI_ServiceResponse was not an object",
+            provider=provider,
+            endpoint=endpoint,
+            failure_kind="parse",
+        )
+    header = data.get("cmmMsgHeader", data)
+    if not isinstance(header, Mapping):
+        raise KhoaParseError(
+            "OpenAPI_ServiceResponse header was not an object",
+            provider=provider,
+            endpoint=endpoint,
+            failure_kind="parse",
+        )
+    code = str(header.get("returnReasonCode") or "").strip()
+    message = str(header.get("returnAuthMsg") or header.get("errMsg") or "data.go.kr error")
+    _raise_direct_result_code(code, message, provider=provider, endpoint=endpoint)
+
+
+def _raise_direct_result_code(
+    code: str,
+    message: str,
+    *,
+    provider: str,
+    endpoint: str,
+) -> None:
+    text = f"data.go.kr API returned {code}: {message}" if code else message
+    upper = text.upper()
+    if code in {"20", "30", "31"} or "SERVICE_KEY" in upper or "AUTH" in upper:
+        raise KhoaAuthError(
+            text,
+            provider=provider,
+            endpoint=endpoint,
+            result_code=code or None,
+            failure_kind="auth",
+        )
+    if code == "22" or "LIMIT" in upper or "QUOTA" in upper or "TRAFFIC" in upper:
+        from .exceptions import KhoaRateLimitError
+
+        raise KhoaRateLimitError(
+            text,
+            provider=provider,
+            endpoint=endpoint,
+            result_code=code or None,
+            failure_kind="rate_limit",
+        )
+    if code in {"04", "99"} or code.startswith("5"):
+        raise KhoaServerError(
+            text,
+            provider=provider,
+            endpoint=endpoint,
+            result_code=code or None,
+            failure_kind="server",
+        )
+    raise KhoaRequestError(
+        text,
+        provider=provider,
+        endpoint=endpoint,
+        result_code=code or None,
+        failure_kind="request",
+    )
+
+
+def _raise_direct_status(
+    status_code: int,
+    text: str,
+    *,
+    endpoint: str,
+    key: str,
+    provider: str = "khoa.go.kr",
+) -> None:
     if status_code < 400:
         return
 
-    message = _redact_secret(text.strip() or f"KHOA direct endpoint returned {status_code}", key)
+    message = _redact_secret(text.strip() or f"direct endpoint returned {status_code}", key)
     if status_code in {401, 403}:
         raise KhoaAuthError(
             message,
-            provider="khoa.go.kr",
+            provider=provider,
             endpoint=endpoint,
             status_code=status_code,
             failure_kind="auth",
@@ -984,7 +1765,7 @@ def _raise_direct_status(status_code: int, text: str, *, endpoint: str, key: str
 
         raise KhoaRateLimitError(
             message,
-            provider="khoa.go.kr",
+            provider=provider,
             endpoint=endpoint,
             status_code=status_code,
             failure_kind="rate_limit",
@@ -992,7 +1773,7 @@ def _raise_direct_status(status_code: int, text: str, *, endpoint: str, key: str
     if status_code >= 500:
         raise KhoaServerError(
             message,
-            provider="khoa.go.kr",
+            provider=provider,
             endpoint=endpoint,
             status_code=status_code,
             failure_kind="server",
@@ -1000,7 +1781,7 @@ def _raise_direct_status(status_code: int, text: str, *, endpoint: str, key: str
         )
     raise KhoaRequestError(
         message,
-        provider="khoa.go.kr",
+        provider=provider,
         endpoint=endpoint,
         status_code=status_code,
         failure_kind="request",

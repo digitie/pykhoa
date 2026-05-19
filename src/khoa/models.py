@@ -288,6 +288,71 @@ class BeachIndexForecast(KhoaModel):
         )
 
 
+class OceanBeachInfo(KhoaModel):
+    """해양수산부 해수욕장정보 서비스의 해수욕장 장소 행."""
+
+    num: str | None = None
+    sido_name: str
+    gugun_name: str | None = None
+    name: str
+    beach_width_m: float | None = None
+    beach_length_m: float | None = None
+    beach_kind: str | None = None
+    link_url: str | None = None
+    link_name: str | None = None
+    image_url: str | None = None
+    emergency_contact: str | None = None
+    coordinate: PlaceCoordinate | None = None
+    raw: dict[str, Any] = Field(default_factory=dict)
+
+    @property
+    def source_key(self) -> str:
+        """TripMate feature natural key로 쓰기 좋은 provider 내 안정 키."""
+
+        return "|".join((self.sido_name, self.gugun_name or "", self.name))
+
+    @property
+    def lat(self) -> float | None:
+        """위도 별칭."""
+
+        return self.coordinate.lat if self.coordinate is not None else None
+
+    @property
+    def lon(self) -> float | None:
+        """경도 별칭."""
+
+        return self.coordinate.lon if self.coordinate is not None else None
+
+    @classmethod
+    def from_raw(cls, row: Mapping[str, Any]) -> OceanBeachInfo:
+        """공공데이터포털 해수욕장정보 원문 행을 typed DTO로 변환합니다."""
+
+        sido_name = _required_row_text(row, "sidoNm", "SIDO_NM", "sido_name")
+        name = _required_row_text(row, "staNm", "beachName", "name")
+        latitude = to_float_or_none(row.get("lat"))
+        longitude = to_float_or_none(row.get("lon"))
+        coordinate = (
+            PlaceCoordinate(lat=latitude, lon=longitude)
+            if latitude is not None and longitude is not None
+            else None
+        )
+        return cls(
+            num=_row_text(row, "num"),
+            sido_name=sido_name,
+            gugun_name=_row_text(row, "gugunNm", "gugun_name"),
+            name=name,
+            beach_width_m=to_float_or_none(row.get("beachWid")),
+            beach_length_m=to_float_or_none(row.get("beachLen")),
+            beach_kind=_row_text(row, "beachKnd"),
+            link_url=_row_text(row, "linkAddr"),
+            link_name=_row_text(row, "linkNm"),
+            image_url=_row_text(row, "beachImg"),
+            emergency_contact=_row_text(row, "linkTel"),
+            coordinate=coordinate,
+            raw=dict(row),
+        )
+
+
 class BeachIndexPlace(KhoaModel):
     """해수욕장 하나와 그 장소에 속한 해수욕지수 예보 묶음."""
 
@@ -628,6 +693,14 @@ def _row_text(row: Mapping[str, Any], *keys: str) -> str | None:
         if text is not None:
             return text
     return None
+
+
+def _required_row_text(row: Mapping[str, Any], *keys: str) -> str:
+    text = _row_text(row, *keys)
+    if text is None:
+        joined = ", ".join(keys)
+        raise ValueError(f"row requires one of: {joined}")
+    return text
 
 
 def _to_date_or_none(value: object) -> date | None:

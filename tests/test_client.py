@@ -8,11 +8,13 @@ import pytest
 from kraddr.base import Address
 
 from khoa import (
+    AsyncKhoaClient,
     BeachIndexPlace,
     BeachSearchResult,
     KhoaClient,
     KhoaRequestError,
     MarineIndexPlace,
+    OceanBeachInfo,
     RomsPrediction,
     get_api_catalog,
     get_api_catalog_entry,
@@ -20,7 +22,7 @@ from khoa import (
 )
 from khoa.exceptions import KhoaAuthError, KhoaNoDataError
 
-from .conftest import FakeResponse, khoa_payload
+from .conftest import FakeResponse, FakeSession, khoa_payload
 
 
 class FakeVworldClient:
@@ -57,6 +59,52 @@ def test_fetch_builds_request_and_normalizes_items(fake_client_factory):
     assert page.context is not None
     assert page.context.endpoint == "roms/GetRomsApiService"
     assert "serviceKey" not in page.context.request_params
+
+
+@pytest.mark.asyncio
+async def test_aio_client_fetch_uses_krheritage_style_api() -> None:
+    session = FakeSession(
+        [
+            FakeResponse(khoa_payload({"foo": "bar"})),
+            FakeResponse(khoa_payload(None, result_code="03")),
+        ]
+    )
+
+    async with KhoaClient.aio(api_key="TEST_KEY", session=session, retries=0) as client:
+        assert isinstance(client, AsyncKhoaClient)
+        page = await client.fetch("vortex", num_of_rows=1)
+        dynamic_page = await client.vortex(num_of_rows=1)
+
+    assert page.items == ({"foo": "bar"},)
+    assert dynamic_page.items == ()
+    assert client.closed
+    assert [call["params"]["serviceKey"] for call in session.calls] == ["TEST_KEY", "TEST_KEY"]
+
+
+@pytest.mark.asyncio
+async def test_aio_client_iterates_oceans_beach_info_pages() -> None:
+    session = FakeSession(
+        [
+            FakeResponse(
+                _top_level_khoa_payload(
+                    {"sidoNm": "제주", "gugunNm": "제주시", "staNm": "A", "lat": 33, "lon": 126},
+                    total_count=1,
+                )
+            )
+        ]
+    )
+    client = AsyncKhoaClient(api_key="TEST_KEY", session=session, retries=0)
+
+    pages = [
+        page
+        async for page in client.iter_oceans_beach_info_pages(
+            sido_names=("제주",),
+            num_of_rows=1,
+        )
+    ]
+
+    assert pages[0].items[0].name == "A"
+    assert session.calls[0]["url"].endswith("/OceansBeachInfoService1/getOceansBeachInfo1")
 
 
 def test_constructor_strips_service_key_clipboard_whitespace(fake_client_factory):
@@ -256,6 +304,100 @@ def test_beach_search_prefers_khoa_direct_key_from_env_file(tmp_path, fake_clien
 
     assert result.id == "BCH001"
     assert session.calls[0]["params"]["ServiceKey"] == "DIRECT_KEY"
+
+
+def test_oceans_beach_info_calls_public_data_endpoint_and_returns_dto(fake_client_factory):
+    row = {
+        "num": "1",
+        "sidoNm": "제주",
+        "gugunNm": "서귀포시",
+        "staNm": "신양섭지코지",
+        "beachWid": "80",
+        "beachLen": "300",
+        "beachKnd": "모래",
+        "linkAddr": "https://www.visitjeju.net/",
+        "linkNm": "제주관광",
+        "beachImg": "https://cdn.example.com/beach.jpg",
+        "linkTel": "동부보건소성산지소(064-782-2368)",
+        "lat": "33.4348090000",
+        "lon": "126.9230210000",
+    }
+    client, session = fake_client_factory(FakeResponse(_top_level_khoa_payload(row)))
+
+    page = client.oceans_beach_info("제주", num_of_rows=1)
+
+    call = session.calls[0]
+    assert call["url"].endswith("/OceansBeachInfoService1/getOceansBeachInfo1")
+    assert call["params"]["ServiceKey"] == "TEST_KEY"
+    assert call["params"]["SIDO_NM"] == "제주"
+    assert call["params"]["resultType"] == "JSON"
+    item = page.items[0]
+    assert isinstance(item, OceanBeachInfo)
+    assert item.name == "신양섭지코지"
+    assert item.source_key == "제주|서귀포시|신양섭지코지"
+    assert item.coordinate is not None
+    assert item.coordinate.lat == pytest.approx(33.434809)
+    assert item.coordinate.lon == pytest.approx(126.923021)
+    assert page.context is not None
+    assert "ServiceKey" not in page.context.request_params
+
+
+def test_oceans_beach_info_accepts_wrapped_live_payload(fake_client_factory):
+    row = {
+        "sidoNm": "충남",
+        "gugunNm": "보령시",
+        "staNm": "대천",
+        "lat": "36.310000",
+        "lon": "126.513000",
+    }
+    payload = {
+        "getOceansBeachInfo": {
+            "header": {"code": "00", "message": "NORMAL SERVICE"},
+            "item": row,
+            "numOfRows": 1,
+            "pageNo": 1,
+            "totalCount": 1,
+        }
+    }
+    client, _session = fake_client_factory(FakeResponse(payload))
+
+    page = client.oceans_beach_info("충남", num_of_rows=1)
+
+    assert page.items[0].name == "대천"
+    assert page.total_count == 1
+
+
+def test_iter_oceans_beach_info_pages_scans_sido_pages(fake_client_factory):
+    client, session = fake_client_factory(
+        FakeResponse(
+            _top_level_khoa_payload(
+                [{"sidoNm": "제주", "gugunNm": "제주시", "staNm": "A", "lat": 33, "lon": 126}],
+                page_no=1,
+                num_of_rows=1,
+                total_count=2,
+            )
+        ),
+        FakeResponse(
+            _top_level_khoa_payload(
+                [{"sidoNm": "제주", "gugunNm": "제주시", "staNm": "B", "lat": 33, "lon": 126}],
+                page_no=2,
+                num_of_rows=1,
+                total_count=2,
+            )
+        ),
+        FakeResponse(_top_level_khoa_payload(None, result_code="03", total_count=0)),
+    )
+
+    pages = list(
+        client.iter_oceans_beach_info_pages(
+            sido_names=("제주", "부산"),
+            num_of_rows=1,
+        )
+    )
+
+    assert [page.items[0].name for page in pages] == ["A", "B"]
+    assert [call["params"]["pageNo"] for call in session.calls] == [1, 2, 1]
+    assert [call["params"]["SIDO_NM"] for call in session.calls] == ["제주", "제주", "부산"]
 
 
 def test_api_catalog_contains_human_readable_dataset_names():
